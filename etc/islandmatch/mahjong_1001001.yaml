@@ -5,7 +5,6 @@ player_per_table: 4
 initial_chips: 1000
 score_base: 1
 game_config:
-  game_name: mahjong_1001
   rules:
     - standard_mahjong_rules
     - no_flower_tiles

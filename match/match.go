@@ -1,4 +1,4 @@
-package service
+package match
 
 import (
 	"context"
@@ -75,11 +75,19 @@ func (m *Match) HandleSignup(ctx context.Context, req *cproto.SignupReq) *cproto
 	}
 
 	// Add player to match
-	m.PlayerIDs = append(m.PlayerIDs, req.Playerid)
-	m.ReadyPlayers[req.Playerid] = false
+	uid := m.app.GetSessionFromCtx(ctx).UID()
+	if uid == "" {
+		logrus.Warnf("Player ID is empty for signup request: %v", req)
+		return &cproto.SingupAck{
+			Matchid:   req.Matchid,
+			ErrorCode: 4, // invalid player ID
+		}
+	}
+	m.PlayerIDs = append(m.PlayerIDs, uid)
+	m.ReadyPlayers[uid] = false
 
 	logrus.Infof("Player %s joined match %s, current players: %d/%d",
-		req.Playerid, m.ID, len(m.PlayerIDs), m.Config.MaxPlayers)
+		uid, m.ID, len(m.PlayerIDs), m.Config.MaxPlayers)
 
 	// Check if match is full
 	if len(m.PlayerIDs) == m.Config.MaxPlayers {

@@ -1,4 +1,4 @@
-package service
+package match
 
 import (
 	"context"
@@ -35,6 +35,7 @@ func (t *Table) ToProto() *cproto.TableInfo {
 }
 
 func NewTable(app pitaya.Pitaya, matchID, id string, players []string) *Table {
+	app.GroupCreate(context.Background(), id)
 	return &Table{
 		ID:        id,
 		MatchID:   matchID,
@@ -90,7 +91,7 @@ func (t *Table) StartGame(config MatchConfig) error {
 		Players: t.Players,
 	}
 
-	if err := t.App.GroupBroadcast(context.Background(), "proxy", t.MatchID, "matchmsg", startAck); err != nil {
+	if err := t.App.GroupBroadcast(context.Background(), "proxy", t.ID, "matchmsg", startAck); err != nil {
 		return err
 	}
 
