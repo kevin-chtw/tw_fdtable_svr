@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/kevin-chtw/tw_proto/cproto"
@@ -24,6 +25,7 @@ type Match struct {
 	Status       int // 0: waiting, 1: matching, 2: playing, 3: ended
 	CreatedAt    time.Time
 	ReadyPlayers map[string]bool
+	mu           sync.RWMutex // 新增读写锁
 }
 
 func NewMatch(app pitaya.Pitaya, id string, config MatchConfig) *Match {
@@ -51,24 +53,27 @@ func (m *Match) HandleMatchReq(ctx context.Context, req *cproto.MatchReq) *cprot
 	}
 
 	// Handle signup request
-	if req.SignupReq != nil {
-		signupAck := m.HandleSignup(ctx, req.SignupReq)
-		ack.SingupAck = signupAck
+	if signupReq := req.GetSignupReq(); signupReq != nil {
+		signupAck := m.HandleSignup(ctx, signupReq)
+		ack.Ack = &cproto.MatchAck_SignupAck{SignupAck: signupAck}
 	}
 
 	return ack
 }
 
-func (m *Match) HandleSignup(ctx context.Context, req *cproto.SignupReq) *cproto.SingupAck {
+func (m *Match) HandleSignup(ctx context.Context, req *cproto.SignupReq) *cproto.SignupAck {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.Status != 0 {
-		return &cproto.SingupAck{
+		return &cproto.SignupAck{
 			Matchid:   req.Matchid,
 			ErrorCode: 1, // match not in waiting status
 		}
 	}
 
 	if len(m.PlayerIDs) >= m.Config.MaxPlayers {
-		return &cproto.SingupAck{
+		return &cproto.SignupAck{
 			Matchid:   req.Matchid,
 			ErrorCode: 3, // match full
 		}
@@ -78,7 +83,7 @@ func (m *Match) HandleSignup(ctx context.Context, req *cproto.SignupReq) *cproto
 	uid := m.app.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
 		logrus.Warnf("Player ID is empty for signup request: %v", req)
-		return &cproto.SingupAck{
+		return &cproto.SignupAck{
 			Matchid:   req.Matchid,
 			ErrorCode: 4, // invalid player ID
 		}
@@ -94,13 +99,16 @@ func (m *Match) HandleSignup(ctx context.Context, req *cproto.SignupReq) *cproto
 		go m.StartMatch()
 	}
 
-	return &cproto.SingupAck{
+	return &cproto.SignupAck{
 		Matchid:   req.Matchid,
 		ErrorCode: 0, // success
 	}
 }
 
 func (m *Match) HandleCancelReq(ctx context.Context, req *cproto.MatchCancelReq) *cproto.MatchCancelAck {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	for i, id := range m.PlayerIDs {
 		if id == req.Playerid {
 			m.PlayerIDs = append(m.PlayerIDs[:i], m.PlayerIDs[i+1:]...)
@@ -135,6 +143,9 @@ func (m *Match) HandleStatusReq(ctx context.Context, req *cproto.MatchStatusReq)
 }
 
 func (m *Match) HandlePlayerReady(ctx context.Context, notify *cproto.PlayerReadyNotify) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if _, exists := m.ReadyPlayers[notify.Playerid]; exists {
 		m.ReadyPlayers[notify.Playerid] = notify.IsReady
 	}
@@ -157,10 +168,17 @@ func (m *Match) AddPlayer(ctx context.Context) bool {
 	s := m.app.GetSessionFromCtx(ctx)
 	fakeUID := s.ID()
 	if err := s.Bind(ctx, strconv.Itoa(int(fakeUID))); err != nil {
-		logrus.Infof("Failed to bind session %s: %v", s.UID(), err)
+		logrus.Warnf("Failed to bind session %s: %v", s.UID(), err)
+		return false
 	}
 
-	m.app.GroupAddMember(ctx, m.ID, s.UID())
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := m.app.GroupAddMember(ctx, m.ID, s.UID()); err != nil {
+		logrus.Warnf("Failed to add member %s to group %s: %v", s.UID(), m.ID, err)
+		return false
+	}
 	m.PlayerIDs = append(m.PlayerIDs, s.UID())
 
 	count, err := m.app.GroupCountMembers(ctx, m.ID)
@@ -186,16 +204,23 @@ func (m *Match) AddPlayer(ctx context.Context) bool {
 }
 
 func (m *Match) RemovePlayer(playerID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	for i, id := range m.PlayerIDs {
 		if id == playerID {
 			m.PlayerIDs = append(m.PlayerIDs[:i], m.PlayerIDs[i+1:]...)
+			delete(m.ReadyPlayers, playerID)
 			break
 		}
 	}
 }
 
 func (m *Match) StartMatch() {
+	m.mu.Lock()
 	m.Status = 2 // playing
+	m.mu.Unlock()
+
 	logrus.Infof("Starting mahjong match %s with %d players", m.ID, len(m.PlayerIDs))
 
 	// Distribute players to tables with skill-based matching
