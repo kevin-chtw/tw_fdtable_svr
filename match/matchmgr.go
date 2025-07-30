@@ -66,3 +66,43 @@ func (pm *MatchManager) Get(matchId string) (*Match, error) {
 	}
 	return match, nil
 }
+
+// 获取玩家创建的房卡匹配
+func (pm *MatchManager) GetPlayerRoomCardMatches(creator string) []*Match {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	var matches []*Match
+	for _, match := range pm.matchs {
+		if match.MatchType == 1 && match.Creator == creator {
+			matches = append(matches, match)
+		}
+	}
+	return matches
+}
+
+// 通过邀请码获取房卡匹配
+func (pm *MatchManager) GetMatchByInviteCode(inviteCode string) (*Match, error) {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	for _, match := range pm.matchs {
+		if match.MatchType == 1 && match.InviteCode == inviteCode {
+			return match, nil
+		}
+	}
+	return nil, errors.New("match not found")
+}
+
+// AddMatch 添加一个新的匹配到管理器
+func (pm *MatchManager) AddMatch(match *Match) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if _, exists := pm.matchs[match.ID]; exists {
+		return fmt.Errorf("match with ID %s already exists", match.ID)
+	}
+
+	pm.matchs[match.ID] = match
+	return nil
+}
