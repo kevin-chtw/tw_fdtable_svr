@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
@@ -72,194 +71,21 @@ func (m *Match) HandleMatchReq(ctx context.Context, req *cproto.MatchReq) *cprot
 	}
 
 	switch {
-	case req.GetSignupReq() != nil:
-		signupAck := m.HandleSignup(ctx, req.GetSignupReq())
-		ack.Ack = &cproto.MatchAck_SignupAck{SignupAck: signupAck}
-	case req.GetRoomCardCreateReq() != nil:
-		createAck := m.HandleRoomCardCreate(ctx, req.GetRoomCardCreateReq())
-		ack.Ack = &cproto.MatchAck_RoomCardCreateAck{RoomCardCreateAck: createAck}
-	case req.GetRoomCardJoinReq() != nil:
-		joinAck := m.HandleRoomCardJoin(ctx, req.GetRoomCardJoinReq())
-		ack.Ack = &cproto.MatchAck_RoomCardJoinAck{RoomCardJoinAck: joinAck}
+	case req.GetCreateRoomReq() != nil:
+		createAck := m.HandleCreateRoom(ctx, req.GetCreateRoomReq())
+		ack.Ack = &cproto.MatchAck_CreateRoomAck{CreateRoomAck: createAck}
+	case req.GetJoinRoomReq() != nil:
+		joinAck := m.HandleRoomCardJoin(ctx, req.GetJoinRoomReq())
+		ack.Ack = &cproto.MatchAck_JoinRoomAck{JoinRoomAck: joinAck}
 	}
-
 	return ack
 }
 
-func (m *Match) HandleSignup(ctx context.Context, req *cproto.SignupReq) *cproto.SignupAck {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.Status != 0 {
-		return &cproto.SignupAck{
-			Matchid:   req.Matchid,
-			ErrorCode: 1, // match not in waiting status
-		}
-	}
-
-	if len(m.PlayerIDs) >= m.Config.MaxPlayers {
-		return &cproto.SignupAck{
-			Matchid:   req.Matchid,
-			ErrorCode: 3, // match full
-		}
-	}
-
-	// Add player to match
-	uid := m.app.GetSessionFromCtx(ctx).UID()
-	if uid == "" {
-		logrus.Warnf("Player ID is empty for signup request: %v", req)
-		return &cproto.SignupAck{
-			Matchid:   req.Matchid,
-			ErrorCode: 4, // invalid player ID
-		}
-	}
-	m.PlayerIDs = append(m.PlayerIDs, uid)
-	m.ReadyPlayers[uid] = false
-
-	logrus.Infof("Player %s joined match %s, current players: %d/%d",
-		uid, m.ID, len(m.PlayerIDs), m.Config.MaxPlayers)
-
-	// Check if match is full
-	if len(m.PlayerIDs) == m.Config.MaxPlayers {
-		go m.StartMatch()
-	}
-
-	return &cproto.SignupAck{
-		Matchid:   req.Matchid,
-		ErrorCode: 0, // success
-	}
-}
-
-func (m *Match) HandleCancelReq(ctx context.Context, req *cproto.MatchCancelReq) *cproto.MatchCancelAck {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for i, id := range m.PlayerIDs {
-		if id == req.Playerid {
-			m.PlayerIDs = append(m.PlayerIDs[:i], m.PlayerIDs[i+1:]...)
-			delete(m.ReadyPlayers, req.Playerid)
-
-			// 房卡模式下房主退出则解散房间
-			if m.MatchType == 1 && req.Playerid == m.Creator {
-				m.Status = 3 // ended
-				logrus.Infof("Room card match %s disbanded by creator %s", m.ID, req.Playerid)
-			}
-
-			return &cproto.MatchCancelAck{
-				Matchid:   req.Matchid,
-				ErrorCode: 0, // success
-			}
-		}
-	}
-
-	return &cproto.MatchCancelAck{
-		Matchid:   req.Matchid,
-		ErrorCode: 2, // player not in match
-	}
-}
-
-func (m *Match) HandleStatusReq(ctx context.Context, req *cproto.MatchStatusReq) *cproto.MatchStatusAck {
-	// Convert tables to proto format
-	var tables []*cproto.TableInfo
-	for _, table := range m.Tables {
-		tables = append(tables, table.ToProto())
-	}
-
-	statusAck := &cproto.MatchStatusAck{
-		Matchid:   req.Matchid,
-		Status:    int32(m.Status),
-		Players:   m.PlayerIDs,
-		Timeout:   int32(m.Config.Timeout.Seconds() - time.Since(m.CreatedAt).Seconds()),
-		Tables:    tables,
-		MatchType: int32(m.MatchType),
-	}
-
-	if m.MatchType == 1 { // 房卡模式
-		statusAck.Creator = m.Creator
-	}
-
-	return statusAck
-}
-
-func (m *Match) HandlePlayerReady(ctx context.Context, notify *cproto.PlayerReadyNotify) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, exists := m.ReadyPlayers[notify.Playerid]; exists {
-		m.ReadyPlayers[notify.Playerid] = notify.IsReady
-	}
-
-	// Check if all players are ready
-	allReady := true
-	for _, ready := range m.ReadyPlayers {
-		if !ready {
-			allReady = false
-			break
-		}
-	}
-
-	if allReady {
-		if m.MatchType == 1 { // 房卡模式
-			// 房主可以手动开始游戏，不受最小玩家数限制
-			if notify.Playerid == m.Creator {
-				m.StartMatch()
-			}
-		} else if len(m.PlayerIDs) >= m.Config.MinPlayers { // 普通匹配
-			m.StartMatch()
-		}
-	}
-}
-
-func (m *Match) AddPlayer(ctx context.Context) bool {
-	s := m.app.GetSessionFromCtx(ctx)
-	fakeUID := s.ID()
-	if err := s.Bind(ctx, strconv.Itoa(int(fakeUID))); err != nil {
-		logrus.Warnf("Failed to bind session %s: %v", s.UID(), err)
-		return false
-	}
-
-	// 房卡模式检查房间是否已满
-	if m.MatchType == 1 && len(m.PlayerIDs) >= m.Config.MaxPlayers {
-		logrus.Warnf("Room card match %s is full, cannot add more players", m.ID)
-		return false
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if err := m.app.GroupAddMember(ctx, m.ID, s.UID()); err != nil {
-		logrus.Warnf("Failed to add member %s to group %s: %v", s.UID(), m.ID, err)
-		return false
-	}
-	m.PlayerIDs = append(m.PlayerIDs, s.UID())
-
-	count, err := m.app.GroupCountMembers(ctx, m.ID)
-	if err != nil {
-		logrus.Infof("Failed to count members in group %s: %v", m.ID, err)
-		return false
-	}
-
-	uids, err := m.app.GroupMembers(ctx, m.ID)
-	if err != nil {
-		logrus.Infof("Failed to get members in group %s: %v", m.ID, err)
-		return false
-	}
-	if err := s.Push("matchmsg", &cproto.StartClientAck{Matchid: m.ID, Players: uids}); err != nil {
-		logrus.Infof("Failed to push matchmsg to %s: %v", s.UID(), err)
-		return false
-	}
-	logrus.Infof("Group %s has %d members", m.ID, count)
-	if count == 1 && m.MatchType == 0 { // 普通匹配模式才自动开始
-		m.StartMatch()
-	}
-	return true
-}
-
 // 处理房卡创建请求
-func (m *Match) HandleRoomCardCreate(ctx context.Context, req *cproto.RoomCardCreateReq) *cproto.RoomCardCreateAck {
+func (m *Match) HandleCreateRoom(ctx context.Context, req *cproto.CreateRoomReq) *cproto.CreateRoomAck {
 	uid := m.app.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
-		return &cproto.RoomCardCreateAck{
+		return &cproto.CreateRoomAck{
 			ErrorCode: 2, // 创建失败
 		}
 	}
