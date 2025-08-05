@@ -5,146 +5,131 @@ import (
 	"errors"
 	"time"
 
-	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
 	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 )
 
+const (
+	TableStatusWaiting = iota // 0: waiting
+	TableStatusPlaying        // 1: playing
+	TableStatusEnded          // 2: ended
+)
+
 type Table struct {
-	ID        string
-	Players   []string
-	Status    int // 0: waiting, 1: playing, 2: ended
-	CreatedAt time.Time
-	MatchID   string
-	App       pitaya.Pitaya
+	app         pitaya.Pitaya
+	ID          int32
+	MatchID     int32
+	Players     []string
+	status      int // 0: waiting, 1: playing, 2: ended
+	createdAt   time.Time
+	creator     string // 创建者ID
+	gameCount   int32  // 游戏局数
+	playerCount int32  // 玩家数量
 }
 
-// HandleMatchResult 处理从game服返回的Match2GameAck
-func (t *Table) HandleMatchResult(ctx context.Context, ack *sproto.Match2GameAck) error {
-	return t.HandleGameResult(ack)
-}
-
-func (t *Table) ToProto() *cproto.TableInfo {
-	return &cproto.TableInfo{
-		Tableid:  t.ID,
-		Players:  t.Players,
-		Status:   int32(t.Status),
-		CreateAt: t.CreatedAt.Unix(),
-	}
-}
-
-func NewTable(app pitaya.Pitaya, matchID, id string, players []string) *Table {
-	app.GroupCreate(context.Background(), id)
+func NewTable(app pitaya.Pitaya, matchID, id int32) *Table {
 	return &Table{
-		ID:        id,
-		MatchID:   matchID,
-		Players:   players,
-		Status:    0, // waiting
-		CreatedAt: time.Now(),
-		App:       app,
+		ID:          id,
+		MatchID:     matchID,
+		Players:     []string{},
+		status:      TableStatusWaiting,
+		createdAt:   time.Now(),
+		creator:     "",
+		app:         app,
+		gameCount:   1,
+		playerCount: 4,
 	}
+}
+
+func (t *Table) Init(creator string, gameCount int32) error {
+	t.creator = creator
+	t.gameCount = gameCount
+	err := t.sendAddTable()
+	if err != nil {
+		logrus.Errorf("Failed to send AddTableReq: %v", err)
+		return err
+	}
+	t.AddPlayer(t.creator)
+	return nil
+}
+
+func (t *Table) sendAddTable() error {
+	req := t.NewMatch2GameReq()
+	req.Req = &sproto.Match2GameReq_AddTableReq{
+		AddTableReq: &sproto.AddTableReq{
+			GameConfig:  "",
+			ScoreBase:   1,
+			MatchType:   1, // 默认普通匹配
+			GameCount:   t.gameCount,
+			PlayerCount: t.playerCount,
+		},
+	}
+	rsp, err := t.SendToGame(req)
+	if err != nil {
+		logrus.Errorf("Failed to send AddTableReq: %v", err)
+		return err
+	}
+
+	addTableAck := rsp.GetAddTableAck()
+	if addTableAck == nil || addTableAck.ErrorCode != 0 {
+		return errors.New("add table ack is nil or error code is not 0")
+	}
+	return nil
 }
 
 // AddPlayer 添加玩家到桌子
-func (t *Table) AddPlayer(playerID string) bool {
-	if t.Status != 0 {
-		return false // 桌子不在等待状态
+func (t *Table) AddPlayer(playerID string) error {
+	if len(t.Players) >= int(t.playerCount) {
+		return errors.New("table is full")
 	}
-
 	for _, p := range t.Players {
 		if p == playerID {
-			return false // 玩家已在桌
+			return errors.New("player already exists on table")
 		}
 	}
-
 	t.Players = append(t.Players, playerID)
-	return true
+	if err := t.sendAddPlayer(playerID, int32(len(t.Players)-1)); err != nil {
+		logrus.Errorf("Failed to send AddPlayerReq: %v", err)
+		return err
+	}
+	return nil
 }
 
-// StartGame 通知游戏服务开始游戏
-func (t *Table) StartGame(config MatchConfig) error {
-	t.Status = 1 // playing
-
-	gameReq := &sproto.Match2GameReq{
-		StartGameReq: &sproto.StartGameReq{
-			MatchServerId: t.App.GetServerID(),
-			Matchid:       t.MatchID,
-			Tableid:       t.ID,
-			Players:       t.Players,
-			GameConfig:    config.GameConfig.Rules,
-			InitialChips:  int32(config.InitialChips),
-			ScoreBase:     int32(config.ScoreBase),
+func (t *Table) sendAddPlayer(playerId string, seat int32) error {
+	req := t.NewMatch2GameReq()
+	req.Req = &sproto.Match2GameReq_AddPlayerReq{
+		AddPlayerReq: &sproto.AddPlayerReq{
+			Playerid: playerId,
+			Seatnum:  seat,
+			Score:    0, // 初始分数为0
 		},
 	}
-
-	rsp := &cproto.CommonResponse{Err: cproto.ErrCode_OK}
-	if err := t.App.RPC(context.Background(), "game.game.matchmsg", rsp, gameReq); err != nil {
-		t.Status = 0 // 回滚状态
+	rsp, err := t.SendToGame(req)
+	if err != nil {
+		logrus.Errorf("Failed to send AddTableReq: %v", err)
 		return err
 	}
 
-	// 通知玩家进入桌子
-	startAck := &cproto.StartClientAck{
+	addPlayerAck := rsp.GetAddPlayerAck()
+	if addPlayerAck == nil || addPlayerAck.ErrorCode != 0 {
+		return errors.New("add table ack is nil or error code is not 0")
+	}
+	return nil
+}
+
+func (t *Table) SendToGame(msg *sproto.Match2GameReq) (rsp *sproto.Match2GameAck, err error) {
+	rsp = &sproto.Match2GameAck{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = t.app.RPC(ctx, "game.match.message", rsp, msg)
+	return
+}
+
+func (t *Table) NewMatch2GameReq() *sproto.Match2GameReq {
+	return &sproto.Match2GameReq{
+		Gameid:  0,
 		Matchid: t.MatchID,
 		Tableid: t.ID,
-		Players: t.Players,
 	}
-
-	if err := t.App.GroupBroadcast(context.Background(), "proxy", t.ID, "matchmsg", startAck); err != nil {
-		return err
-	}
-
-	logrus.Infof("Table %s started with players: %v", t.ID, t.Players)
-	return nil
-}
-
-// HandleGameResult 处理游戏结果
-func (t *Table) HandleGameResult(ack *sproto.Match2GameAck) error {
-	if ack.GameResultAck == nil {
-		return errors.New("invalid game result ack")
-	}
-
-	t.Status = 2 // ended
-	result := ack.GameResultAck
-
-	// 广播游戏结果
-	endAck := &cproto.GameEndAck{
-		Matchid:   t.MatchID,
-		Tableid:   t.ID,
-		Players:   t.Players,
-		EndReason: result.EndReason,
-		Winner:    getWinnerFromScores(result.Scores), // 根据分数计算获胜者
-	}
-
-	if err := t.App.GroupBroadcast(context.Background(), "proxy", t.MatchID, "matchmsg", endAck); err != nil {
-		return err
-	}
-
-	// 归还玩家到匹配池
-	for _, playerID := range t.Players {
-		t.App.GroupRemoveMember(context.Background(), t.MatchID, playerID)
-	}
-
-	logrus.Infof("Table %s ended with result: %+v", t.ID, result)
-	return nil
-}
-
-// IsFull 检查桌子是否已满
-func (t *Table) IsFull(maxPlayers int) bool {
-	return len(t.Players) >= maxPlayers
-}
-
-// getWinnerFromScores 根据分数数组返回获胜者索引
-func getWinnerFromScores(scores []int32) int32 {
-	if len(scores) == 0 {
-		return -1
-	}
-	maxIndex := 0
-	for i := 1; i < len(scores); i++ {
-		if scores[i] > scores[maxIndex] {
-			maxIndex = i
-		}
-	}
-	return int32(maxIndex)
 }
