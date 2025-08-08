@@ -6,65 +6,30 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/kevin-chtw/tw_match_svr/match"
 	"github.com/kevin-chtw/tw_proto/cproto"
+	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"github.com/topfreegames/pitaya/v3/pkg/component"
 )
 
-type handlerFunc func(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error)
-
 type PlayerService struct {
 	component.Base
 	app      pitaya.Pitaya
-	handlers map[reflect.Type]handlerFunc
+	handlers map[reflect.Type]func(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error)
 }
 
 func NewPlayerService(app pitaya.Pitaya) *PlayerService {
-	p := &PlayerService{
+	return &PlayerService{
 		app:      app,
-		handlers: make(map[reflect.Type]handlerFunc),
+		handlers: make(map[reflect.Type]func(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error)),
 	}
-	p.Init()
-	return p
-}
-
-// extractMessage 使用反射从oneof接口中提取具体消息
-func ExtractOneOf(oneof interface{}) (proto.Message, error) {
-	if oneof == nil {
-		return nil, errors.New("nil oneof value")
-	}
-
-	val := reflect.ValueOf(oneof)
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-	}
-
-	// 获取包含具体消息的字段
-	field := val.FieldByName("XXX_OneofWrappers")
-	if !field.IsValid() {
-		return nil, errors.New("not a oneof type")
-	}
-
-	// 获取具体消息值
-	msgField := val.Field(0) // 具体消息总是第一个字段
-	if msgField.IsNil() {
-		return nil, errors.New("oneof contains nil message")
-	}
-
-	msg, ok := msgField.Interface().(proto.Message)
-	if !ok {
-		return nil, fmt.Errorf("field does not implement proto.Message: %T", msgField.Interface())
-	}
-
-	return msg, nil
 }
 
 func (p *PlayerService) Init() {
-	// 注册具体消息类型的handler
-	p.handlers[reflect.TypeOf(&cproto.CreateRoomReq{})] = p.handleCreateRoom
-	p.handlers[reflect.TypeOf(&cproto.JoinRoomReq{})] = p.handleJoinRoom
+	logrus.Info("PlayerService initialized")
+	p.handlers[reflect.TypeOf(&cproto.MatchReq_CreateRoomReq{})] = p.handleCreateRoom
+	p.handlers[reflect.TypeOf(&cproto.MatchReq_JoinRoomReq{})] = p.handleJoinRoom
 }
 
 func (p *PlayerService) Message(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
@@ -72,22 +37,14 @@ func (p *PlayerService) Message(ctx context.Context, req *cproto.MatchReq) (*cpr
 		return nil, errors.New("nil request")
 	}
 
-	// 获取oneof中的具体值
-	v := req.Req
-	if v == nil {
+	if req.Req == nil {
 		return nil, errors.New("empty oneof")
 	}
 
-	// 使用反射提取具体消息
-	msg, err := ExtractOneOf(v)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract message: %v", err)
-	}
-
 	// 查找对应的handler
-	fn, ok := p.handlers[reflect.TypeOf(msg)]
+	fn, ok := p.handlers[reflect.TypeOf(req.Req)]
 	if !ok {
-		return nil, fmt.Errorf("no handler for message type: %T", msg)
+		return nil, fmt.Errorf("no handler for message type: %T", req.Req)
 	}
 
 	return fn(ctx, req)
