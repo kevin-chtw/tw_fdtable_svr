@@ -8,6 +8,7 @@ import (
 	"github.com/kevin-chtw/tw_proto/sproto"
 	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
+	"github.com/topfreegames/pitaya/v3/pkg/modules"
 )
 
 const (
@@ -88,6 +89,14 @@ func (t *Table) AddPlayer(playerID string) error {
 			return errors.New("player already exists on table")
 		}
 	}
+	module, err := t.app.GetModule("matchingstorage")
+	if err != nil {
+		return err
+	}
+	ms := module.(*modules.ETCDBindingStorage)
+	if err = ms.PutBinding(playerID); err != nil {
+		return err
+	}
 	t.Players = append(t.Players, playerID)
 	if err := t.sendAddPlayer(playerID, int32(len(t.Players)-1)); err != nil {
 		logrus.Errorf("Failed to send AddPlayerReq: %v", err)
@@ -101,7 +110,7 @@ func (t *Table) sendAddPlayer(playerId string, seat int32) error {
 	req.Req = &sproto.Match2GameReq_AddPlayerReq{
 		AddPlayerReq: &sproto.AddPlayerReq{
 			Playerid: playerId,
-			Seatnum:  seat,
+			Seat:     seat,
 			Score:    0, // 初始分数为0
 		},
 	}

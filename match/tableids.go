@@ -4,7 +4,6 @@ import (
 	"errors"
 	"math/rand"
 	"sync"
-	"time"
 )
 
 const (
@@ -26,8 +25,6 @@ type TableIDs struct {
 
 // NewTableIDs 创建一个新的生成器
 func NewTableIDs() *TableIDs {
-	rand.Seed(time.Now().UnixNano())
-
 	n := maxID - minID + 1
 	shuffle := make([]int32, n)
 	for i := range shuffle {

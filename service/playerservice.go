@@ -8,6 +8,7 @@ import (
 
 	"github.com/kevin-chtw/tw_match_svr/match"
 	"github.com/kevin-chtw/tw_proto/cproto"
+	"github.com/kevin-chtw/tw_proto/sproto"
 	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"github.com/topfreegames/pitaya/v3/pkg/component"
@@ -37,6 +38,7 @@ func (p *PlayerService) Message(ctx context.Context, req *cproto.MatchReq) (*cpr
 		return nil, errors.New("nil request")
 	}
 
+	logrus.Info(req)
 	if req.Req == nil {
 		return nil, errors.New("empty oneof")
 	}
@@ -48,6 +50,16 @@ func (p *PlayerService) Message(ctx context.Context, req *cproto.MatchReq) (*cpr
 	}
 
 	return fn(ctx, req)
+}
+
+func (p *PlayerService) Online(ctx context.Context, req *sproto.Proxy2MatchReq) (*sproto.Proxy2MatchAck, error) {
+	logrus.Info("PlayerService::Online")
+	return nil, nil
+}
+
+func (p *PlayerService) Offline(ctx context.Context, req *sproto.Proxy2MatchReq) (*sproto.Proxy2MatchAck, error) {
+	logrus.Info("PlayerService::offline")
+	return nil, nil
 }
 
 func (p *PlayerService) NewMatchAck(req *cproto.MatchReq) *cproto.MatchAck {
