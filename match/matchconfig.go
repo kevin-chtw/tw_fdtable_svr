@@ -8,11 +8,12 @@ import (
 )
 
 type MatchConfig struct {
+	MatchType    string        `yaml:"match_type"`
+	MatchId      int32         `yaml:"matchid"`
+	GameID       int           `yaml:"gameid"`
 	MaxPlayers   int           `yaml:"player_per_table"`
 	Timeout      time.Duration `yaml:"timeout"`
 	MinPlayers   int           `yaml:"min_players"`
-	MatchType    string        `yaml:"match_type"`
-	GameID       int           `yaml:"gameid"`
 	InitialChips int           `yaml:"initial_chips"`
 	ScoreBase    int           `yaml:"score_base"`
 	GameConfig   GameRules     `yaml:"game_config"`

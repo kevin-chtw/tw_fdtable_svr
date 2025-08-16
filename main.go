@@ -3,19 +3,22 @@ package main
 import (
 	"strings"
 
+	"github.com/kevin-chtw/tw_common/utils"
+	"github.com/kevin-chtw/tw_match_svr/match"
 	"github.com/kevin-chtw/tw_match_svr/service"
 	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"github.com/topfreegames/pitaya/v3/pkg/component"
 	"github.com/topfreegames/pitaya/v3/pkg/config"
+	"github.com/topfreegames/pitaya/v3/pkg/logger"
 	"github.com/topfreegames/pitaya/v3/pkg/modules"
 )
 
 var app pitaya.Pitaya
 
 func main() {
+	pitaya.SetLogger(utils.Logger(logrus.InfoLevel))
 	serverType := "match"
-	logrus.SetLevel(logrus.DebugLevel)
 
 	config := config.NewDefaultPitayaConfig()
 	builder := pitaya.NewDefaultBuilder(false, serverType, pitaya.Cluster, map[string]string{}, *config)
@@ -25,8 +28,10 @@ func main() {
 	bs := modules.NewETCDBindingStorage(builder.Server, builder.SessionPool, builder.Config.Modules.BindingStorage.Etcd)
 	app.RegisterModule(bs, "matchingstorage")
 
-	logrus.Infof("Pitaya server of type %s started", serverType)
+	logger.Log.Infof("Pitaya server of type %s started", serverType)
 	initServices()
+	match.InitGame(app)
+
 	app.Start()
 }
 

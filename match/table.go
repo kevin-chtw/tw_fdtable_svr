@@ -21,30 +21,30 @@ type Table struct {
 	app         pitaya.Pitaya
 	ID          int32
 	MatchID     int32
-	Players     []string
+	Players     []*Player
 	status      int // 0: waiting, 1: playing, 2: ended
 	createdAt   time.Time
-	creator     string // 创建者ID
-	gameCount   int32  // 游戏局数
-	playerCount int32  // 玩家数量
+	creator     *Player // 创建者ID
+	gameCount   int32   // 游戏局数
+	playerCount int32   // 玩家数量
 }
 
 func NewTable(app pitaya.Pitaya, matchID, id int32) *Table {
 	return &Table{
 		ID:          id,
 		MatchID:     matchID,
-		Players:     []string{},
+		Players:     make([]*Player, 0),
 		status:      TableStatusWaiting,
 		createdAt:   time.Now(),
-		creator:     "",
+		creator:     nil,
 		app:         app,
 		gameCount:   1,
 		playerCount: 4,
 	}
 }
 
-func (t *Table) Init(creator string, gameCount int32) error {
-	t.creator = creator
+func (t *Table) Init(p *Player, gameCount int32) error {
+	t.creator = p
 	t.gameCount = gameCount
 	err := t.sendAddTable()
 	if err != nil {
@@ -80,12 +80,12 @@ func (t *Table) sendAddTable() error {
 }
 
 // AddPlayer 添加玩家到桌子
-func (t *Table) AddPlayer(playerID string) error {
+func (t *Table) AddPlayer(player *Player) error {
 	if len(t.Players) >= int(t.playerCount) {
 		return errors.New("table is full")
 	}
 	for _, p := range t.Players {
-		if p == playerID {
+		if p.ID == player.ID {
 			return errors.New("player already exists on table")
 		}
 	}
@@ -94,11 +94,11 @@ func (t *Table) AddPlayer(playerID string) error {
 		return err
 	}
 	ms := module.(*modules.ETCDBindingStorage)
-	if err = ms.PutBinding(playerID); err != nil {
+	if err = ms.PutBinding(player.ID); err != nil {
 		return err
 	}
-	t.Players = append(t.Players, playerID)
-	if err := t.sendAddPlayer(playerID, int32(len(t.Players)-1)); err != nil {
+	t.Players = append(t.Players, player)
+	if err := t.sendAddPlayer(player.ID, int32(len(t.Players)-1)); err != nil {
 		logrus.Errorf("Failed to send AddPlayerReq: %v", err)
 		return err
 	}

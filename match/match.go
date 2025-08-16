@@ -2,6 +2,7 @@ package match
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/kevin-chtw/tw_proto/cproto"
@@ -31,44 +32,53 @@ func NewMatch(app pitaya.Pitaya, id int32, config MatchConfig) *Match {
 }
 
 // 处理房卡创建请求
-func (m *Match) HandleCreateRoom(ctx context.Context, req *cproto.CreateRoomReq) *cproto.CreateRoomAck {
-	ack := &cproto.CreateRoomAck{}
+func (m *Match) HandleCreateRoom(ctx context.Context, req *cproto.CreateRoomReq) (*cproto.CreateRoomAck, error) {
 	uid := m.app.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
-		ack.ErrorCode = 1 // 未登录
-		return ack
+		return nil, errors.New("未登录")
+	}
+
+	player := playerManager.LoadOrStore(uid)
+	if player == nil {
+		return nil, errors.New("玩家不存在")
+	}
+
+	if player.InRoom {
+		return nil, errors.New("玩家已在游戏中")
 	}
 
 	tableId, err := m.tableIds.Take()
 	if err != nil {
-		ack.ErrorCode = 2 // 号已满，无法创建新桌子
-		return ack
+		return nil, errors.New("桌号已满")
 	}
 
 	table := NewTable(m.app, m.ID, tableId)
-	table.Init(uid, req.GameCount)
+	table.Init(player, req.GameCount)
 
 	m.tables.Store(tableId, table)
-	ack.Tableid = tableId
-	return ack
+	return &cproto.CreateRoomAck{Tableid: tableId}, nil
 }
 
 // 处理房卡加入请求
-func (m *Match) HandleJoinRoom(ctx context.Context, req *cproto.JoinRoomReq) *cproto.JoinRoomAck {
-	ack := &cproto.JoinRoomAck{}
+func (m *Match) HandleJoinRoom(ctx context.Context, req *cproto.JoinRoomReq) (*cproto.JoinRoomAck, error) {
 	uid := m.app.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
-		ack.ErrorCode = 1 // 未登录
-		return ack
+		return nil, errors.New("未登录")
 	}
 
 	table, ok := m.tables.Load(req.Tableid)
 	if !ok {
-		ack.ErrorCode = 3 // 桌子不存在
-		return ack
+		return nil, errors.New("桌子不存在")
 	}
-	table.(*Table).AddPlayer(uid)
-	ack.Tableid = req.Tableid
-	ack.ErrorCode = 0 // 成功
-	return ack
+
+	player := playerManager.LoadOrStore(uid)
+	if player == nil {
+		return nil, errors.New("玩家不存在")
+	}
+
+	if player.InRoom {
+		return nil, errors.New("玩家已在游戏中")
+	}
+	table.(*Table).AddPlayer(player)
+	return &cproto.JoinRoomAck{Tableid: req.Tableid}, nil
 }

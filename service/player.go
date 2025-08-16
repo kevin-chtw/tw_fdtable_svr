@@ -5,50 +5,41 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/kevin-chtw/tw_common/utils"
 	"github.com/kevin-chtw/tw_match_svr/match"
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
-	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"github.com/topfreegames/pitaya/v3/pkg/component"
+	"github.com/topfreegames/pitaya/v3/pkg/logger"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-type PlayerService struct {
+type Player struct {
 	component.Base
 	app      pitaya.Pitaya
 	handlers map[string]func(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error)
 }
 
-func NewPlayerService(app pitaya.Pitaya) *PlayerService {
-	return &PlayerService{
+func NewPlayerService(app pitaya.Pitaya) *Player {
+	return &Player{
 		app:      app,
 		handlers: make(map[string]func(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error)),
 	}
 }
 
-func TypeUrl(src proto.Message) string {
-	any, err := anypb.New(&cproto.CreateRoomReq{})
-	if err != nil {
-		logrus.Error(err)
-		return ""
-	}
-	return any.GetTypeUrl()
+func (p *Player) Init() {
+	p.handlers[utils.TypeUrl(&cproto.CreateRoomReq{})] = p.handleCreateRoom
+	p.handlers[utils.TypeUrl(&cproto.JoinRoomReq{})] = p.handleJoinRoom
 }
 
-func (p *PlayerService) Init() {
-	logrus.Info("PlayerService initialized")
-
-	p.handlers[TypeUrl(&cproto.CreateRoomReq{})] = p.handleCreateRoom
-	p.handlers[TypeUrl(&cproto.JoinRoomReq{})] = p.handleJoinRoom
-}
-
-func (p *PlayerService) Message(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
+func (p *Player) Message(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
 	if req == nil {
 		return nil, errors.New("nil request: MatchReq cannot be nil")
 	}
 
+	logger.Log.Info(req.String(), req.Req.TypeUrl)
 	if handler, ok := p.handlers[req.Req.TypeUrl]; ok {
 		return handler(ctx, req)
 	}
@@ -56,17 +47,17 @@ func (p *PlayerService) Message(ctx context.Context, req *cproto.MatchReq) (*cpr
 	return nil, errors.New("invalid request type")
 }
 
-func (p *PlayerService) Online(ctx context.Context, req *sproto.Proxy2MatchReq) (*sproto.Proxy2MatchAck, error) {
-	logrus.Info("PlayerService::Online")
+func (p *Player) Online(ctx context.Context, req *sproto.Proxy2MatchReq) (*sproto.Proxy2MatchAck, error) {
+	logger.Log.Info("PlayerService::Online")
 	return nil, nil
 }
 
-func (p *PlayerService) Offline(ctx context.Context, req *sproto.Proxy2MatchReq) (*sproto.Proxy2MatchAck, error) {
-	logrus.Info("PlayerService::offline")
+func (p *Player) Offline(ctx context.Context, req *sproto.Proxy2MatchReq) (*sproto.Proxy2MatchAck, error) {
+	logger.Log.Info("PlayerService::offline")
 	return nil, nil
 }
 
-func (p *PlayerService) newMatchAck(req *cproto.MatchReq, ack proto.Message) (*cproto.MatchAck, error) {
+func (p *Player) newMatchAck(req *cproto.MatchReq, ack proto.Message) (*cproto.MatchAck, error) {
 	if ack == nil {
 		return nil, errors.New("failed to create room")
 	}
@@ -83,7 +74,7 @@ func (p *PlayerService) newMatchAck(req *cproto.MatchReq, ack proto.Message) (*c
 	}, nil
 }
 
-func (p *PlayerService) handleCreateRoom(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
+func (p *Player) handleCreateRoom(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
 	msg := &cproto.CreateRoomReq{}
 	if err := proto.Unmarshal(req.Req.Value, msg); err != nil {
 		return nil, err
@@ -93,11 +84,14 @@ func (p *PlayerService) handleCreateRoom(ctx context.Context, req *cproto.MatchR
 	if match == nil {
 		return nil, fmt.Errorf("match not found for ID %d", req.Matchid)
 	}
-	createAck := match.HandleCreateRoom(ctx, msg)
+	createAck, err := match.HandleCreateRoom(ctx, msg)
+	if err != nil {
+		return nil, err
+	}
 	return p.newMatchAck(req, createAck)
 }
 
-func (p *PlayerService) handleJoinRoom(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
+func (p *Player) handleJoinRoom(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
 	msg := &cproto.JoinRoomReq{}
 	if err := proto.Unmarshal(req.Req.Value, msg); err != nil {
 		return nil, err
@@ -107,6 +101,9 @@ func (p *PlayerService) handleJoinRoom(ctx context.Context, req *cproto.MatchReq
 	if match == nil {
 		return nil, fmt.Errorf("match not found for ID %d", req.Matchid)
 	}
-	joinAck := match.HandleJoinRoom(ctx, msg)
+	joinAck, err := match.HandleJoinRoom(ctx, msg)
+	if err != nil {
+		return nil, err
+	}
 	return p.newMatchAck(req, joinAck)
 }

@@ -1,15 +1,19 @@
 module github.com/kevin-chtw/tw_match_svr
 
-go 1.24.0
+go 1.24.4
 
 require (
+	github.com/kevin-chtw/tw_common v0.0.0-00010101000000-000000000000
 	github.com/kevin-chtw/tw_proto v0.0.0-20250616100835-700e15a73cc2
 	github.com/sirupsen/logrus v1.9.3
 	github.com/topfreegames/pitaya/v3 v3.0.0-beta.6
+	google.golang.org/protobuf v1.36.7
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/kevin-chtw/tw_proto v0.0.0-20250616100835-700e15a73cc2 => ../tw_proto
+replace github.com/kevin-chtw/tw_proto => ../tw_proto
+
+replace github.com/kevin-chtw/tw_common => ../tw_common
 
 require (
 	github.com/DataDog/datadog-go v4.8.3+incompatible // indirect
@@ -78,6 +82,5 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240701130421-f6361c86f094 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240701130421-f6361c86f094 // indirect
 	google.golang.org/grpc v1.64.0 // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )
