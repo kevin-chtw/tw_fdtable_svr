@@ -9,6 +9,8 @@ import (
 	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"github.com/topfreegames/pitaya/v3/pkg/modules"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 const (
@@ -56,25 +58,21 @@ func (t *Table) Init(p *Player, gameCount int32) error {
 }
 
 func (t *Table) sendAddTable() error {
-	req := t.NewMatch2GameReq()
-	req.Req = &sproto.Match2GameReq_AddTableReq{
-		AddTableReq: &sproto.AddTableReq{
-			GameConfig:  "",
-			ScoreBase:   1,
-			MatchType:   1, // 默认普通匹配
-			GameCount:   t.gameCount,
-			PlayerCount: t.playerCount,
-		},
+	req := &sproto.AddTableReq{
+		GameConfig:  "",
+		ScoreBase:   1,
+		MatchType:   1, // 默认普通匹配
+		GameCount:   t.gameCount,
+		PlayerCount: t.playerCount,
 	}
-	rsp, err := t.SendToGame(req)
+	rsp, err := t.send2Game(req)
 	if err != nil {
-		logrus.Errorf("Failed to send AddTableReq: %v", err)
 		return err
 	}
 
-	addTableAck := rsp.GetAddTableAck()
-	if addTableAck == nil || addTableAck.ErrorCode != 0 {
-		return errors.New("add table ack is nil or error code is not 0")
+	ack, err := rsp.Ack.UnmarshalNew()
+	if err != nil || ack == nil {
+		return err
 	}
 	return nil
 }
@@ -102,43 +100,52 @@ func (t *Table) AddPlayer(player *Player) error {
 		logrus.Errorf("Failed to send AddPlayerReq: %v", err)
 		return err
 	}
+	player.InRoom = true
 	return nil
 }
 
 func (t *Table) sendAddPlayer(playerId string, seat int32) error {
-	req := t.NewMatch2GameReq()
-	req.Req = &sproto.Match2GameReq_AddPlayerReq{
-		AddPlayerReq: &sproto.AddPlayerReq{
-			Playerid: playerId,
-			Seat:     seat,
-			Score:    0, // 初始分数为0
-		},
+	req := &sproto.AddPlayerReq{
+		Playerid: playerId,
+		Seat:     seat,
+		Score:    0, // 初始分数为0
 	}
-	rsp, err := t.SendToGame(req)
+	rsp, err := t.send2Game(req)
 	if err != nil {
 		logrus.Errorf("Failed to send AddTableReq: %v", err)
 		return err
 	}
 
-	addPlayerAck := rsp.GetAddPlayerAck()
-	if addPlayerAck == nil || addPlayerAck.ErrorCode != 0 {
-		return errors.New("add table ack is nil or error code is not 0")
+	ack, err := rsp.Ack.UnmarshalNew()
+	if err != nil || ack == nil {
+		return err
 	}
 	return nil
 }
 
-func (t *Table) SendToGame(msg *sproto.Match2GameReq) (rsp *sproto.Match2GameAck, err error) {
+func (t *Table) send2Game(msg proto.Message) (rsp *sproto.Match2GameAck, err error) {
+	if msg == nil {
+		return nil, errors.New("msg is nil")
+	}
+
+	data, err := anypb.New(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &sproto.Match2GameReq{
+		Gameid:  0,
+		Matchid: t.MatchID,
+		Tableid: t.ID,
+		Req:     data,
+	}
 	rsp = &sproto.Match2GameAck{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	err = t.app.RPC(ctx, "game.match.message", rsp, msg)
+	err = t.app.RPC(ctx, "game.match.message", rsp, req)
 	return
 }
 
 func (t *Table) NewMatch2GameReq() *sproto.Match2GameReq {
-	return &sproto.Match2GameReq{
-		Gameid:  0,
-		Matchid: t.MatchID,
-		Tableid: t.ID,
-	}
+	return nil
 }

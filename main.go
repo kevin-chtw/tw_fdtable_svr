@@ -17,8 +17,8 @@ import (
 var app pitaya.Pitaya
 
 func main() {
-	pitaya.SetLogger(utils.Logger(logrus.InfoLevel))
 	serverType := "match"
+	pitaya.SetLogger(utils.Logger(logrus.InfoLevel))
 
 	config := config.NewDefaultPitayaConfig()
 	builder := pitaya.NewDefaultBuilder(false, serverType, pitaya.Cluster, map[string]string{}, *config)
