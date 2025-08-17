@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
 	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
@@ -20,34 +21,38 @@ const (
 )
 
 type Table struct {
-	app         pitaya.Pitaya
-	ID          int32
-	MatchID     int32
-	Players     []*Player
-	status      int // 0: waiting, 1: playing, 2: ended
-	createdAt   time.Time
-	creator     *Player // 创建者ID
-	gameCount   int32   // 游戏局数
-	playerCount int32   // 玩家数量
+	app        pitaya.Pitaya
+	ID         int32
+	MatchID    int32
+	Players    []*Player
+	status     int // 0: waiting, 1: playing, 2: ended
+	createdAt  time.Time
+	creator    *Player // 创建者ID
+	gameCount  int32   // 游戏局数
+	conf       *MatchConfig
+	fdproperty map[string]int32
+	desn       string
 }
 
 func NewTable(app pitaya.Pitaya, matchID, id int32) *Table {
 	return &Table{
-		ID:          id,
-		MatchID:     matchID,
-		Players:     make([]*Player, 0),
-		status:      TableStatusWaiting,
-		createdAt:   time.Now(),
-		creator:     nil,
-		app:         app,
-		gameCount:   1,
-		playerCount: 4,
+		ID:         id,
+		MatchID:    matchID,
+		Players:    make([]*Player, 0),
+		status:     TableStatusWaiting,
+		createdAt:  time.Now(),
+		creator:    nil,
+		fdproperty: make(map[string]int32),
+		app:        app,
 	}
 }
 
-func (t *Table) Init(p *Player, gameCount int32) error {
+func (t *Table) create(p *Player, req *cproto.CreateRoomReq, config *MatchConfig) error {
 	t.creator = p
-	t.gameCount = gameCount
+	t.gameCount = req.GameCount
+	t.conf = config
+	t.fdproperty = req.Properties
+	t.desn = req.Desn
 	err := t.sendAddTable()
 	if err != nil {
 		logrus.Errorf("Failed to send AddTableReq: %v", err)
@@ -57,13 +62,19 @@ func (t *Table) Init(p *Player, gameCount int32) error {
 	return nil
 }
 
+func (t *Table) cancel(p *Player) error {
+	// TODO
+	return nil
+}
+
 func (t *Table) sendAddTable() error {
 	req := &sproto.AddTableReq{
-		GameConfig:  "",
-		ScoreBase:   1,
-		MatchType:   1, // 默认普通匹配
+		Property:    t.conf.Property,
+		ScoreBase:   int32(t.conf.ScoreBase),
+		MatchType:   int32(t.conf.MatchType),
 		GameCount:   t.gameCount,
-		PlayerCount: t.playerCount,
+		PlayerCount: int32(t.conf.PlayerPerTable),
+		Fdproperty:  t.fdproperty,
 	}
 	rsp, err := t.send2Game(req)
 	if err != nil {
@@ -79,7 +90,7 @@ func (t *Table) sendAddTable() error {
 
 // AddPlayer 添加玩家到桌子
 func (t *Table) AddPlayer(player *Player) error {
-	if len(t.Players) >= int(t.playerCount) {
+	if len(t.Players) >= int(t.conf.PlayerPerTable) {
 		return errors.New("table is full")
 	}
 	for _, p := range t.Players {
@@ -108,7 +119,7 @@ func (t *Table) sendAddPlayer(playerId string, seat int32) error {
 	req := &sproto.AddPlayerReq{
 		Playerid: playerId,
 		Seat:     seat,
-		Score:    0, // 初始分数为0
+		Score:    int64(t.conf.InitialChips), // 初始分数为0
 	}
 	rsp, err := t.send2Game(req)
 	if err != nil {
@@ -144,8 +155,4 @@ func (t *Table) send2Game(msg proto.Message) (rsp *sproto.Match2GameAck, err err
 	defer cancel()
 	err = t.app.RPC(ctx, "game.match.message", rsp, req)
 	return
-}
-
-func (t *Table) NewMatch2GameReq() *sproto.Match2GameReq {
-	return nil
 }

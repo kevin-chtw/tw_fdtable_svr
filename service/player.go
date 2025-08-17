@@ -32,6 +32,7 @@ func NewPlayerService(app pitaya.Pitaya) *Player {
 func (p *Player) Init() {
 	p.handlers[utils.TypeUrl(&cproto.CreateRoomReq{})] = p.handleCreateRoom
 	p.handlers[utils.TypeUrl(&cproto.JoinRoomReq{})] = p.handleJoinRoom
+	p.handlers[utils.TypeUrl(&cproto.CancelRoomReq{})] = p.handleCancelRoom
 }
 
 func (p *Player) Message(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
@@ -106,4 +107,21 @@ func (p *Player) handleJoinRoom(ctx context.Context, req *cproto.MatchReq) (*cpr
 		return nil, err
 	}
 	return p.newMatchAck(req, joinAck)
+}
+
+func (p *Player) handleCancelRoom(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
+	msg := &cproto.CancelRoomReq{}
+	if err := proto.Unmarshal(req.Req.Value, msg); err != nil {
+		return nil, err
+	}
+
+	match := match.GetMatchManager().Get(req.Matchid)
+	if match == nil {
+		return nil, fmt.Errorf("match not found for ID %d", req.Matchid)
+	}
+	cancelAck, err := match.HandleCancelRoom(ctx, msg)
+	if err != nil {
+		return nil, err
+	}
+	return p.newMatchAck(req, cancelAck)
 }

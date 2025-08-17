@@ -45,8 +45,8 @@ func (m *MatchManager) LoadMatchs() error {
 		}
 
 		logger.Log.Infof("加载比赛配置: %s", file)
-		match := NewMatch(m.app, config.MatchId, *config)
-		m.matchs[config.MatchId] = match
+		match := NewMatch(m.app, config)
+		m.matchs[config.MatchID] = match
 	}
 
 	return nil
