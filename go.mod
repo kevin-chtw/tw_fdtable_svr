@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/kevin-chtw/tw_common v0.0.0-00010101000000-000000000000
-	github.com/kevin-chtw/tw_proto v0.0.0-20250616100835-700e15a73cc2
+	github.com/kevin-chtw/tw_proto v0.0.0-20250817090421-de16e4c22163
 	github.com/sirupsen/logrus v1.9.3
 	github.com/topfreegames/pitaya/v3 v3.0.0-beta.6
 	google.golang.org/protobuf v1.36.7

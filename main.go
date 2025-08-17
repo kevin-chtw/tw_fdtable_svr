@@ -17,7 +17,7 @@ import (
 var app pitaya.Pitaya
 
 func main() {
-	serverType := "match"
+	serverType := "fdtable"
 	pitaya.SetLogger(utils.Logger(logrus.InfoLevel))
 
 	config := config.NewDefaultPitayaConfig()
