@@ -39,6 +39,8 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/leodido/go-urn v1.2.4 // indirect
+	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible // indirect
+	github.com/lestrrat-go/strftime v1.1.1 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailgun/proxyproto v1.0.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
