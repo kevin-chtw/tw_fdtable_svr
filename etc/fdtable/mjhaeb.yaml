@@ -1,5 +1,6 @@
 match_type: 1
 gameid: 1001
+route: mjhaeb.match.message
 matchid: 1001001
 player_per_table: 4
 initial_chips: 1000

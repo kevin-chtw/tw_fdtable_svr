@@ -1,20 +1,36 @@
 package match
 
+import (
+	"errors"
+)
+
 // Player 表示游戏中的玩家
 type Player struct {
-	ID     string // 玩家唯一ID
-	Score  int32  // 玩家积分
-	Status int32  // 玩家状态，例如：在线0、离线1等
-	InRoom bool   // 玩家是否在房间内
+	ID       string // 玩家唯一ID
+	isOnline bool   // 玩家在线状态
+	matchId  int32
+	tableId  int32
 }
 
 // NewPlayer 创建新玩家实例
-func NewPlayer(id string) *Player {
+func NewPlayer(id string, matchId, tableId int32) *Player {
 	p := &Player{
-		ID:     id,
-		Score:  0, // 初始积分为0
-		Status: 0,
-		InRoom: false,
+		ID:       id,
+		isOnline: true, // 默认在线状态
+		matchId:  matchId,
+		tableId:  tableId,
 	}
 	return p
+}
+
+func (p *Player) NetChange(online bool) error {
+	match := matchManager.Get(p.matchId)
+	if match == nil {
+		return errors.New("match not found for ID")
+	}
+	if p.isOnline == online {
+		return nil
+	}
+	p.isOnline = online
+	return match.netChange(p, online)
 }

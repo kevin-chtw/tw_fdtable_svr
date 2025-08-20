@@ -11,37 +11,39 @@ import (
 type PlayerManager struct {
 	mu      sync.RWMutex
 	players map[string]*Player // tableID -> Table
-	app     pitaya.Pitaya
 }
 
 // NewPlayerManager 创建玩家管理器
 func NewPlayerManager(app pitaya.Pitaya) *PlayerManager {
 	return &PlayerManager{
 		players: make(map[string]*Player),
-		app:     app,
 	}
 }
 
 // GetPlayer 获取玩家实例
-func (pm *PlayerManager) Load(userID string) (*Player, error) {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+func (p *PlayerManager) Load(userID string) (*Player, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
-	player, ok := pm.players[userID]
+	player, ok := p.players[userID]
 	if !ok {
 		return nil, errors.New("player not found")
 	}
 	return player, nil
 }
 
-func (pm *PlayerManager) LoadOrStore(userID string) *Player {
-	pm.mu.RLock()
-	defer pm.mu.RUnlock()
+func (p *PlayerManager) Store(userID string, matchId, tableId int32) *Player {
+	player := NewPlayer(userID, matchId, tableId)
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	player, ok := pm.players[userID]
-	if !ok {
-		player = NewPlayer(userID)
-		pm.players[userID] = player
-	}
+	p.players[player.ID] = player
 	return player
+}
+
+func (p *PlayerManager) Delete(userID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	delete(p.players, userID)
 }

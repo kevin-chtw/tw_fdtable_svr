@@ -7,12 +7,13 @@ import (
 )
 
 type MatchConfig struct {
-	MatchType      int    `yaml:"match_type"`
-	GameID         int    `yaml:"gameid"`
+	MatchType      int32  `yaml:"match_type"`
+	GameID         int32  `yaml:"gameid"`
+	Route          string `yaml:"route"`
 	MatchID        int32  `yaml:"matchid"`
-	PlayerPerTable int    `yaml:"player_per_table"`
-	InitialChips   int    `yaml:"initial_chips"`
-	ScoreBase      int    `yaml:"score_base"`
+	PlayerPerTable int32  `yaml:"player_per_table"`
+	InitialChips   int64  `yaml:"initial_chips"`
+	ScoreBase      int64  `yaml:"score_base"`
 	Property       string `yaml:"property"`
 }
 

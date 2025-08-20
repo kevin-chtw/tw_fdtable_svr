@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/kevin-chtw/tw_common/storage"
 	"github.com/kevin-chtw/tw_common/utils"
 	"github.com/kevin-chtw/tw_match_svr/match"
 	"github.com/kevin-chtw/tw_match_svr/service"
@@ -11,7 +12,6 @@ import (
 	"github.com/topfreegames/pitaya/v3/pkg/component"
 	"github.com/topfreegames/pitaya/v3/pkg/config"
 	"github.com/topfreegames/pitaya/v3/pkg/logger"
-	"github.com/topfreegames/pitaya/v3/pkg/modules"
 )
 
 var app pitaya.Pitaya
@@ -25,7 +25,7 @@ func main() {
 	app = builder.Build()
 
 	defer app.Shutdown()
-	bs := modules.NewETCDBindingStorage(builder.Server, builder.SessionPool, builder.Config.Modules.BindingStorage.Etcd)
+	bs := storage.NewETCDMatching(builder.Server, builder.Config.Modules.BindingStorage.Etcd)
 	app.RegisterModule(bs, "matchingstorage")
 
 	logger.Log.Infof("Pitaya server of type %s started", serverType)

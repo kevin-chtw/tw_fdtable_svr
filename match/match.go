@@ -7,100 +7,122 @@ import (
 
 	"github.com/kevin-chtw/tw_proto/cproto"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // Table定义已移动到table.go
 
 type Match struct {
-	ID        int32
-	app       pitaya.Pitaya
-	tables    sync.Map
-	config    *MatchConfig
-	matchType int // 0: 普通匹配, 1: 房卡模式
-	tableIds  *TableIDs
+	app      pitaya.Pitaya
+	tables   sync.Map
+	conf     *MatchConfig
+	tableIds *TableIDs
 }
 
 func NewMatch(app pitaya.Pitaya, config *MatchConfig) *Match {
 	return &Match{
-		app:       app,
-		ID:        config.MatchID,
-		tables:    sync.Map{},
-		config:    config,
-		matchType: config.MatchType, // 默认普通匹配模式
-		tableIds:  NewTableIDs(),
+		app:      app,
+		tables:   sync.Map{},
+		conf:     config,
+		tableIds: NewTableIDs(),
 	}
 }
 
 // 处理房卡创建请求
-func (m *Match) HandleCreateRoom(ctx context.Context, req *cproto.CreateRoomReq) (*cproto.CreateRoomAck, error) {
+func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
+	req := msg.(*cproto.CreateRoomReq)
 	uid := m.app.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
-		return nil, errors.New("未登录")
+		return nil, errors.New("no logged in")
 	}
 
-	player := playerManager.LoadOrStore(uid)
-	if player == nil {
-		return nil, errors.New("玩家不存在")
-	}
-
-	if player.InRoom {
-		return nil, errors.New("玩家已在游戏中")
+	if player, _ := playerManager.Load(uid); player != nil {
+		return nil, errors.New("player is in match")
 	}
 
 	tableId, err := m.tableIds.Take()
 	if err != nil {
-		return nil, errors.New("桌号已满")
+		return nil, errors.New("table is full or no table id")
 	}
 
-	table := NewTable(m.app, m.ID, tableId)
-	table.create(player, req, m.config)
+	player := playerManager.Store(uid, m.conf.MatchID, tableId)
+	table := NewTable(m, tableId)
+	if err := table.create(player, req); err != nil {
+		return nil, err
+	}
 
 	m.tables.Store(tableId, table)
 	return &cproto.CreateRoomAck{Tableid: tableId, Desn: req.Desn, Properties: req.Properties}, nil
 }
 
-// 处理房卡加入请求
-func (m *Match) HandleJoinRoom(ctx context.Context, req *cproto.JoinRoomReq) (*cproto.JoinRoomAck, error) {
+func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
+	req := msg.(*cproto.CancelRoomReq)
 	uid := m.app.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
-		return nil, errors.New("未登录")
+		return nil, errors.New("no logged in")
 	}
 
 	table, ok := m.tables.Load(req.Tableid)
 	if !ok {
-		return nil, errors.New("桌子不存在")
+		return nil, errors.New("table not found")
 	}
 
-	player := playerManager.LoadOrStore(uid)
-	if player == nil {
-		return nil, errors.New("玩家不存在")
+	player, err := playerManager.Load(uid)
+	if player == nil || err != nil {
+		return nil, errors.New("player not found")
 	}
 
-	if player.InRoom {
-		return nil, errors.New("玩家已在游戏中")
-	}
 	t := table.(*Table)
-	t.AddPlayer(player)
+	if err := t.cancel(player); err != nil {
+		return nil, err
+	}
+	return &cproto.CancelRoomAck{Tableid: req.Tableid}, nil
+}
+
+// 处理房卡加入请求
+func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
+	req := msg.(*cproto.JoinRoomReq)
+	uid := m.app.GetSessionFromCtx(ctx).UID()
+	if uid == "" {
+		return nil, errors.New("no logged in")
+	}
+
+	table, ok := m.tables.Load(req.Tableid)
+	if !ok {
+		return nil, errors.New("table not found")
+	}
+	if player, _ := playerManager.Load(uid); player != nil {
+		return nil, errors.New("player is in match")
+	}
+
+	player := playerManager.Store(uid, m.conf.MatchID, req.Tableid)
+	t := table.(*Table)
+	if err := t.addPlayer(player); err != nil {
+		return nil, err
+	}
 	return &cproto.JoinRoomAck{Tableid: req.Tableid, Desn: t.desn, Properties: t.fdproperty}, nil
 }
 
-func (m *Match) HandleCancelRoom(ctx context.Context, req *cproto.CancelRoomReq) (*cproto.CancelRoomAck, error) {
-	uid := m.app.GetSessionFromCtx(ctx).UID()
-	if uid == "" {
-		return nil, errors.New("未登录")
+func (m *Match) NewMatchAck(ack proto.Message) (*cproto.MatchAck, error) {
+	data, err := anypb.New(ack)
+	if err != nil {
+		return nil, err
 	}
 
-	table, ok := m.tables.Load(req.Tableid)
+	return &cproto.MatchAck{
+		Serverid: m.app.GetServerID(),
+		Matchid:  m.conf.MatchID,
+		Ack:      data,
+	}, nil
+}
+
+func (m *Match) netChange(player *Player, online bool) error {
+	table, ok := m.tables.Load(player.tableId)
 	if !ok {
-		return nil, errors.New("桌子不存在")
-	}
-
-	player := playerManager.LoadOrStore(uid)
-	if player == nil {
-		return nil, errors.New("玩家不存在")
+		return errors.New("table not found")
 	}
 
 	t := table.(*Table)
-	t.cancel(player)
-	return &cproto.CancelRoomAck{Tableid: req.Tableid}, nil
+	return t.netChange(player, online)
 }

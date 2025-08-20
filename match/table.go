@@ -5,11 +5,11 @@ import (
 	"errors"
 	"time"
 
+	"github.com/kevin-chtw/tw_common/storage"
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
 	"github.com/sirupsen/logrus"
-	pitaya "github.com/topfreegames/pitaya/v3/pkg"
-	"github.com/topfreegames/pitaya/v3/pkg/modules"
+	"github.com/topfreegames/pitaya/v3/pkg/logger"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -21,97 +21,106 @@ const (
 )
 
 type Table struct {
-	app        pitaya.Pitaya
+	match      *Match
 	ID         int32
-	MatchID    int32
 	Players    []*Player
 	status     int // 0: waiting, 1: playing, 2: ended
 	createdAt  time.Time
 	creator    *Player // 创建者ID
 	gameCount  int32   // 游戏局数
-	conf       *MatchConfig
 	fdproperty map[string]int32
 	desn       string
 }
 
-func NewTable(app pitaya.Pitaya, matchID, id int32) *Table {
+func NewTable(match *Match, id int32) *Table {
 	return &Table{
 		ID:         id,
-		MatchID:    matchID,
 		Players:    make([]*Player, 0),
 		status:     TableStatusWaiting,
 		createdAt:  time.Now(),
 		creator:    nil,
 		fdproperty: make(map[string]int32),
-		app:        app,
 	}
 }
 
-func (t *Table) create(p *Player, req *cproto.CreateRoomReq, config *MatchConfig) error {
+func (t *Table) create(p *Player, req *cproto.CreateRoomReq) error {
 	t.creator = p
 	t.gameCount = req.GameCount
-	t.conf = config
 	t.fdproperty = req.Properties
 	t.desn = req.Desn
-	err := t.sendAddTable()
+	err := t.sendCreateTable()
 	if err != nil {
 		logrus.Errorf("Failed to send AddTableReq: %v", err)
 		return err
 	}
-	t.AddPlayer(t.creator)
-	return nil
+	return t.addPlayer(t.creator)
+}
+
+func (t *Table) sendCreateTable() error {
+	req := &sproto.AddTableReq{
+		Property:    t.match.conf.Property,
+		ScoreBase:   t.match.conf.ScoreBase,
+		MatchType:   t.match.conf.MatchType,
+		GameCount:   t.gameCount,
+		PlayerCount: t.match.conf.PlayerPerTable,
+		Fdproperty:  t.fdproperty,
+	}
+	_, err := t.send2Game(req)
+	return err
 }
 
 func (t *Table) cancel(p *Player) error {
-	// TODO
-	return nil
-}
-
-func (t *Table) sendAddTable() error {
-	req := &sproto.AddTableReq{
-		Property:    t.conf.Property,
-		ScoreBase:   int32(t.conf.ScoreBase),
-		MatchType:   int32(t.conf.MatchType),
-		GameCount:   t.gameCount,
-		PlayerCount: int32(t.conf.PlayerPerTable),
-		Fdproperty:  t.fdproperty,
+	if !t.isOnTable(p) {
+		return errors.New("player not on table")
 	}
-	rsp, err := t.send2Game(req)
+
+	req := &sproto.CancelTableReq{
+		Reason: 0,
+	}
+	if _, err := t.send2Game(req); err != nil {
+		return err
+	}
+	module, err := t.match.app.GetModule("matchingstorage")
 	if err != nil {
 		return err
 	}
-
-	ack, err := rsp.Ack.UnmarshalNew()
-	if err != nil || ack == nil {
-		return err
-	}
-	return nil
-}
-
-// AddPlayer 添加玩家到桌子
-func (t *Table) AddPlayer(player *Player) error {
-	if len(t.Players) >= int(t.conf.PlayerPerTable) {
-		return errors.New("table is full")
-	}
+	ms := module.(*storage.ETCDMatching)
 	for _, p := range t.Players {
-		if p.ID == player.ID {
-			return errors.New("player already exists on table")
+		playerManager.Delete(p.ID)
+		if err = ms.Remove(p.ID); err != nil {
+			logger.Log.Errorf("Failed to remove player from etcd: %v", err)
+			continue
 		}
 	}
-	module, err := t.app.GetModule("matchingstorage")
+
+	t.match.tables.Delete(t.ID)
+	t.match.tableIds.PutBack(t.ID)
+	return nil
+}
+
+// addPlayer 添加玩家到桌子
+func (t *Table) addPlayer(player *Player) error {
+	if len(t.Players) >= int(t.match.conf.PlayerPerTable) {
+		return errors.New("table is full")
+	}
+
+	if t.isOnTable(player) {
+		return errors.New("player already exists on table")
+	}
+
+	module, err := t.match.app.GetModule("matchingstorage")
 	if err != nil {
 		return err
 	}
-	ms := module.(*modules.ETCDBindingStorage)
-	if err = ms.PutBinding(player.ID); err != nil {
+	ms := module.(*storage.ETCDMatching)
+	if err = ms.Put(player.ID); err != nil {
 		return err
 	}
 	t.Players = append(t.Players, player)
 	if err := t.sendAddPlayer(player.ID, int32(len(t.Players)-1)); err != nil {
-		logrus.Errorf("Failed to send AddPlayerReq: %v", err)
+		logger.Log.Errorf("Failed to send AddPlayerReq: %v", err)
 		return err
 	}
-	player.InRoom = true
 	return nil
 }
 
@@ -119,40 +128,62 @@ func (t *Table) sendAddPlayer(playerId string, seat int32) error {
 	req := &sproto.AddPlayerReq{
 		Playerid: playerId,
 		Seat:     seat,
-		Score:    int64(t.conf.InitialChips), // 初始分数为0
+		Score:    int64(t.match.conf.InitialChips),
 	}
-	rsp, err := t.send2Game(req)
-	if err != nil {
-		logrus.Errorf("Failed to send AddTableReq: %v", err)
-		return err
-	}
+	_, err := t.send2Game(req)
+	return err
+}
 
-	ack, err := rsp.Ack.UnmarshalNew()
-	if err != nil || ack == nil {
-		return err
+func (t *Table) isOnTable(player *Player) bool {
+	for _, p := range t.Players {
+		if p.ID == player.ID {
+			return true
+		}
 	}
-	return nil
+	return false
 }
 
 func (t *Table) send2Game(msg proto.Message) (rsp *sproto.Match2GameAck, err error) {
-	if msg == nil {
-		return nil, errors.New("msg is nil")
-	}
-
 	data, err := anypb.New(msg)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &sproto.Match2GameReq{
-		Gameid:  0,
-		Matchid: t.MatchID,
+		Gameid:  t.match.conf.GameID,
+		Matchid: t.match.conf.MatchID,
 		Tableid: t.ID,
 		Req:     data,
 	}
 	rsp = &sproto.Match2GameAck{}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	err = t.app.RPC(ctx, "game.match.message", rsp, req)
+	err = t.match.app.RPC(context.Background(), t.match.conf.Route, rsp, req)
 	return
+}
+
+func (t *Table) netChange(player *Player, online bool) error {
+	if !t.isOnTable(player) {
+		return errors.New("player not on table")
+	}
+	req := &sproto.NetStateReq{
+		Uid:    player.ID,
+		Online: online,
+	}
+	if online {
+		rsp := &cproto.JoinRoomAck{Tableid: t.ID, Desn: t.desn, Properties: t.fdproperty}
+		msg, err := t.match.NewMatchAck(rsp)
+		if err != nil {
+			return err
+		}
+		t.send2User(msg, []string{player.ID})
+	}
+	_, err := t.send2Game(req)
+	return err
+}
+
+func (t *Table) send2User(msg *cproto.MatchAck, players []string) {
+	if m, err := t.match.app.SendPushToUsers(t.match.app.GetServer().Type, msg, players, "proxy"); err != nil {
+		logger.Log.Errorf("send game message to player %v failed: %v", players, err)
+	} else {
+		logger.Log.Infof("send game message to player %v: %v", players, m)
+	}
 }
