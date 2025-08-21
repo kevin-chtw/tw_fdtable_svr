@@ -60,7 +60,7 @@ func (t *Table) sendCreateTable() error {
 	req := &sproto.AddTableReq{
 		Property:    t.match.conf.Property,
 		ScoreBase:   t.match.conf.ScoreBase,
-		MatchType:   t.match.conf.MatchType,
+		MatchType:   t.match.app.GetServer().Type,
 		GameCount:   t.gameCount,
 		PlayerCount: t.match.conf.PlayerPerTable,
 		Fdproperty:  t.fdproperty,

@@ -7,7 +7,6 @@ import (
 )
 
 type MatchConfig struct {
-	MatchType      int32  `yaml:"match_type"`
 	GameID         int32  `yaml:"gameid"`
 	Route          string `yaml:"route"`
 	MatchID        int32  `yaml:"matchid"`
