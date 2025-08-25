@@ -12,6 +12,7 @@ import (
 	"github.com/topfreegames/pitaya/v3/pkg/component"
 	"github.com/topfreegames/pitaya/v3/pkg/config"
 	"github.com/topfreegames/pitaya/v3/pkg/logger"
+	"github.com/topfreegames/pitaya/v3/pkg/serialize"
 )
 
 var app pitaya.Pitaya
@@ -21,6 +22,7 @@ func main() {
 	pitaya.SetLogger(utils.Logger(logrus.InfoLevel))
 
 	config := config.NewDefaultPitayaConfig()
+	config.SerializerType = uint16(serialize.PROTOBUF)
 	builder := pitaya.NewDefaultBuilder(false, serverType, pitaya.Cluster, map[string]string{}, *config)
 	app = builder.Build()
 
