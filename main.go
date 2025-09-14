@@ -19,7 +19,7 @@ var app pitaya.Pitaya
 
 func main() {
 	serverType := "fdtable"
-	pitaya.SetLogger(utils.Logger(logrus.InfoLevel))
+	pitaya.SetLogger(utils.Logger(logrus.DebugLevel))
 
 	config := config.NewDefaultPitayaConfig()
 	config.SerializerType = uint16(serialize.PROTOBUF)

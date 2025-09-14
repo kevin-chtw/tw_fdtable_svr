@@ -61,7 +61,7 @@ func (p *Player) Message(ctx context.Context, req *cproto.MatchReq) (*cproto.Mat
 	return nil, errors.New("invalid request type")
 }
 
-func (p *Player) Session(ctx context.Context, req *sproto.NetStateReq) (*sproto.NetStateAck, error) {
+func (p *Player) Net(ctx context.Context, req *sproto.NetStateReq) (*sproto.NetStateAck, error) {
 	uid := req.GetUid()
 	player, err := match.GetPlayerManager().Load(uid)
 	if err != nil {

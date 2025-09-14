@@ -31,7 +31,7 @@ func (m *MatchManager) LoadMatchs() error {
 	defer m.mu.Unlock()
 
 	// 获取所有比赛配置文件
-	files, err := filepath.Glob(filepath.Join("etc", "islandmatch", "*.yaml"))
+	files, err := filepath.Glob(filepath.Join("etc", "fdtable", "*.yaml"))
 	if err != nil {
 		return err
 	}

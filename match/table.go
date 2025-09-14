@@ -34,6 +34,7 @@ type Table struct {
 
 func NewTable(match *Match, id int32) *Table {
 	return &Table{
+		match:      match,
 		ID:         id,
 		Players:    make([]*Player, 0),
 		status:     TableStatusWaiting,
