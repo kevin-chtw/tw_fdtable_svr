@@ -10,15 +10,17 @@ type Player struct {
 	isOnline bool   // 玩家在线状态
 	matchId  int32
 	tableId  int32
+	score    int64 // 玩家分数
 }
 
 // NewPlayer 创建新玩家实例
-func NewPlayer(id string, matchId, tableId int32) *Player {
+func NewPlayer(id string, matchId, tableId int32, score int64) *Player {
 	p := &Player{
 		ID:       id,
 		isOnline: true, // 默认在线状态
 		matchId:  matchId,
 		tableId:  tableId,
+		score:    score,
 	}
 	return p
 }

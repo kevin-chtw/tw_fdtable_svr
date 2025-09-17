@@ -67,5 +67,5 @@ func (p *Player) Net(ctx context.Context, req *sproto.NetStateReq) (*sproto.NetS
 	if err != nil {
 		return nil, err
 	}
-	return nil, player.NetChange(req.GetOnline())
+	return &sproto.NetStateAck{}, player.NetChange(req.GetOnline())
 }

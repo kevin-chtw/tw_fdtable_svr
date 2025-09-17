@@ -32,8 +32,8 @@ func (p *PlayerManager) Load(userID string) (*Player, error) {
 	return player, nil
 }
 
-func (p *PlayerManager) Store(userID string, matchId, tableId int32) *Player {
-	player := NewPlayer(userID, matchId, tableId)
+func (p *PlayerManager) Store(userID string, matchId, tableId int32, score int64) *Player {
+	player := NewPlayer(userID, matchId, tableId, score)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

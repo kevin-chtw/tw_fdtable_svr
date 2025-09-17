@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/kevin-chtw/tw_proto/cproto"
+	"github.com/kevin-chtw/tw_proto/sproto"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -46,7 +47,7 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 		return nil, errors.New("table is full or no table id")
 	}
 
-	player := playerManager.Store(uid, m.conf.MatchID, tableId)
+	player := playerManager.Store(uid, m.conf.MatchID, tableId, m.conf.InitialChips)
 	table := NewTable(m, tableId)
 	if err := table.create(player, req); err != nil {
 		return nil, err
@@ -96,12 +97,27 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 		return nil, errors.New("player is in match")
 	}
 
-	player := playerManager.Store(uid, m.conf.MatchID, req.Tableid)
+	player := playerManager.Store(uid, m.conf.MatchID, req.Tableid, m.conf.InitialChips)
 	t := table.(*Table)
 	if err := t.addPlayer(player); err != nil {
 		return nil, err
 	}
 	return &cproto.JoinRoomAck{Tableid: req.Tableid, Desn: t.desn, Properties: t.fdproperty}, nil
+}
+
+func (m *Match) HandleGameResult(tableid int32, msg proto.Message) error {
+	ack := msg.(*sproto.GameResultAck)
+
+	table, ok := m.tables.Load(tableid)
+	if !ok {
+		return errors.New("table not found")
+	}
+
+	t := table.(*Table)
+	if err := t.gameResult(ack); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *Match) NewMatchAck(ack proto.Message) (*cproto.MatchAck, error) {

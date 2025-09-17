@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	minID = 10000
-	maxID = 99999
+	minID = 100000
+	maxID = 999999
 )
 
 var (

@@ -23,7 +23,7 @@ const (
 type Table struct {
 	match      *Match
 	ID         int32
-	Players    []*Player
+	Players    map[string]*Player
 	status     int // 0: waiting, 1: playing, 2: ended
 	createdAt  time.Time
 	creator    *Player // 创建者ID
@@ -36,7 +36,7 @@ func NewTable(match *Match, id int32) *Table {
 	return &Table{
 		match:      match,
 		ID:         id,
-		Players:    make([]*Player, 0),
+		Players:    make(map[string]*Player),
 		status:     TableStatusWaiting,
 		createdAt:  time.Now(),
 		creator:    nil,
@@ -75,28 +75,7 @@ func (t *Table) cancel(p *Player) error {
 		return errors.New("player not on table")
 	}
 
-	req := &sproto.CancelTableReq{
-		Reason: 0,
-	}
-	if _, err := t.send2Game(req); err != nil {
-		return err
-	}
-	module, err := t.match.app.GetModule("matchingstorage")
-	if err != nil {
-		return err
-	}
-	ms := module.(*storage.ETCDMatching)
-	for _, p := range t.Players {
-		playerManager.Delete(p.ID)
-		if err = ms.Remove(p.ID); err != nil {
-			logger.Log.Errorf("Failed to remove player from etcd: %v", err)
-			continue
-		}
-	}
-
-	t.match.tables.Delete(t.ID)
-	t.match.tableIds.PutBack(t.ID)
-	return nil
+	return t.gameOver(1)
 }
 
 // addPlayer 添加玩家到桌子
@@ -117,7 +96,7 @@ func (t *Table) addPlayer(player *Player) error {
 	if err = ms.Put(player.ID); err != nil {
 		return err
 	}
-	t.Players = append(t.Players, player)
+	t.Players[player.ID] = player
 	if err := t.sendAddPlayer(player.ID, int32(len(t.Players)-1)); err != nil {
 		logger.Log.Errorf("Failed to send AddPlayerReq: %v", err)
 		return err
@@ -187,4 +166,42 @@ func (t *Table) send2User(msg *cproto.MatchAck, players []string) {
 	} else {
 		logger.Log.Infof("send game message to player %v: %v", players, m)
 	}
+}
+
+func (t *Table) gameResult(msg *sproto.GameResultAck) error {
+	for _, p := range msg.Players {
+		if player, ok := t.Players[p.Playerid]; ok {
+			player.score = p.Score
+		}
+	}
+	if msg.IsOver || msg.CurGameCount >= t.gameCount {
+		return t.gameOver(0)
+	}
+
+	return nil
+}
+
+func (t *Table) gameOver(reason int32) error {
+	req := &sproto.CancelTableReq{
+		Reason: reason,
+	}
+	if _, err := t.send2Game(req); err != nil {
+		return err
+	}
+	module, err := t.match.app.GetModule("matchingstorage")
+	if err != nil {
+		return err
+	}
+	ms := module.(*storage.ETCDMatching)
+	for _, p := range t.Players {
+		playerManager.Delete(p.ID)
+		if err = ms.Remove(p.ID); err != nil {
+			logger.Log.Errorf("Failed to remove player from etcd: %v", err)
+			continue
+		}
+	}
+
+	t.match.tables.Delete(t.ID)
+	t.match.tableIds.PutBack(t.ID)
+	return nil
 }
