@@ -74,8 +74,11 @@ func (t *Table) cancel(p *Player) error {
 	if !t.isOnTable(p) {
 		return errors.New("player not on table")
 	}
-
-	return t.gameOver(1)
+	req := &sproto.CancelTableReq{
+		Reason: 1,
+	}
+	_, err := t.send2Game(req)
+	return err
 }
 
 // addPlayer 添加玩家到桌子
@@ -130,13 +133,12 @@ func (t *Table) send2Game(msg proto.Message) (rsp *sproto.Match2GameAck, err err
 	}
 
 	req := &sproto.Match2GameReq{
-		Gameid:  t.match.conf.GameID,
 		Matchid: t.match.conf.MatchID,
 		Tableid: t.ID,
 		Req:     data,
 	}
 	rsp = &sproto.Match2GameAck{}
-	err = t.match.app.RPC(context.Background(), t.match.conf.Route, rsp, req)
+	err = t.match.app.RPC(context.Background(), t.match.conf.GameName+".match.message", rsp, req)
 	return
 }
 
@@ -174,20 +176,10 @@ func (t *Table) gameResult(msg *sproto.GameResultAck) error {
 			player.score = p.Score
 		}
 	}
-	if msg.IsOver || msg.CurGameCount >= t.gameCount {
-		return t.gameOver(0)
-	}
-
 	return nil
 }
 
-func (t *Table) gameOver(reason int32) error {
-	req := &sproto.CancelTableReq{
-		Reason: reason,
-	}
-	if _, err := t.send2Game(req); err != nil {
-		return err
-	}
+func (t *Table) gameOver(_ *sproto.GameOverAck) error {
 	module, err := t.match.app.GetModule("matchingstorage")
 	if err != nil {
 		return err

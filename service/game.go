@@ -30,6 +30,7 @@ func NewGame(app pitaya.Pitaya) *Game {
 
 func (g *Game) Init() {
 	g.handlers[utils.TypeUrl(&sproto.GameResultAck{})] = (*match.Match).HandleGameResult
+	g.handlers[utils.TypeUrl(&sproto.GameOverAck{})] = (*match.Match).HandleGameOver
 }
 
 func (g *Game) Message(ctx context.Context, ack *sproto.Match2GameAck) (*protos.Response, error) {

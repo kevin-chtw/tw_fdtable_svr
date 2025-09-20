@@ -1,5 +1,4 @@
-gameid: 1001
-route: mjhaeb.match.message
+game_name: mjhaeb
 matchid: 1001001
 player_per_table: 4
 initial_chips: 1000

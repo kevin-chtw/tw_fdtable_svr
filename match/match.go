@@ -8,6 +8,7 @@ import (
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
+	"github.com/topfreegames/pitaya/v3/pkg/logger"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -114,10 +115,27 @@ func (m *Match) HandleGameResult(tableid int32, msg proto.Message) error {
 	}
 
 	t := table.(*Table)
-	if err := t.gameResult(ack); err != nil {
-		return err
+	err := t.gameResult(ack)
+	if err != nil {
+		logger.Log.Errorf("Failed to handle game result: %v", err)
 	}
-	return nil
+	return err
+}
+
+func (m *Match) HandleGameOver(tableid int32, msg proto.Message) error {
+	ack := msg.(*sproto.GameOverAck)
+
+	table, ok := m.tables.Load(tableid)
+	if !ok {
+		return errors.New("table not found")
+	}
+
+	t := table.(*Table)
+	err := t.gameOver(ack)
+	if err != nil {
+		logger.Log.Errorf("Failed to handle game over: %v", err)
+	}
+	return err
 }
 
 func (m *Match) NewMatchAck(ack proto.Message) (*cproto.MatchAck, error) {

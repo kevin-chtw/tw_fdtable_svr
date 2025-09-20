@@ -1,5 +1,4 @@
-gameid: 1002
-route: mjsc.match.message
+game_name: mjsc
 matchid: 1002001
 player_per_table: 4
 initial_chips: 1000

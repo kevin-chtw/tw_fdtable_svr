@@ -38,7 +38,11 @@ func main() {
 }
 
 func initServices() {
-	playersvc := service.NewPlayerService(app)
-	app.Register(playersvc, component.WithName("player"), component.WithNameFunc(strings.ToLower))
-	app.RegisterRemote(playersvc, component.WithName("player"), component.WithNameFunc(strings.ToLower))
+	player := service.NewPlayer(app)
+	app.Register(player, component.WithName("player"), component.WithNameFunc(strings.ToLower))
+	app.RegisterRemote(player, component.WithName("player"), component.WithNameFunc(strings.ToLower))
+
+	game := service.NewGame(app)
+	app.Register(game, component.WithName("game"), component.WithNameFunc(strings.ToLower))
+	app.RegisterRemote(game, component.WithName("game"), component.WithNameFunc(strings.ToLower))
 }

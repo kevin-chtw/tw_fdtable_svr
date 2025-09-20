@@ -21,7 +21,7 @@ type Player struct {
 	handlers map[string]func(*match.Match, context.Context, proto.Message) (proto.Message, error)
 }
 
-func NewPlayerService(app pitaya.Pitaya) *Player {
+func NewPlayer(app pitaya.Pitaya) *Player {
 	return &Player{
 		app:      app,
 		handlers: make(map[string]func(*match.Match, context.Context, proto.Message) (proto.Message, error)),
