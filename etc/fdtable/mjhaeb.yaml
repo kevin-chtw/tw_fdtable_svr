@@ -1,8 +1,7 @@
 game_name: mjhaeb
 matchid: 1001001
 player_per_table: 4
-initial_chips: 1000
+diamond: 8
+initial_chips: 0
 score_base: 1
-property: 10,10
-    
-
+property: 10,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0

@@ -1,6 +1,7 @@
 game_name: mjsc
 matchid: 1002001
 player_per_table: 4
+diamond: 8
 initial_chips: 1000
 score_base: 1
 property: 10,10

@@ -10,6 +10,7 @@ type MatchConfig struct {
 	GameName       string `yaml:"game_name"`
 	MatchID        int32  `yaml:"matchid"`
 	PlayerPerTable int32  `yaml:"player_per_table"`
+	Diamond        int32  `yaml:"diamond"`
 	InitialChips   int64  `yaml:"initial_chips"`
 	ScoreBase      int64  `yaml:"score_base"`
 	Property       string `yaml:"property"`
