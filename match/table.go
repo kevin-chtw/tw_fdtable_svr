@@ -138,7 +138,7 @@ func (t *Table) send2Game(msg proto.Message) (rsp *sproto.Match2GameAck, err err
 		Req:     data,
 	}
 	rsp = &sproto.Match2GameAck{}
-	err = t.match.app.RPC(context.Background(), t.match.conf.GameName+".match.message", rsp, req)
+	err = t.match.app.RPC(context.Background(), t.match.conf.GameType+".match.message", rsp, req)
 	return
 }
 

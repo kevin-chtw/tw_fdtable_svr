@@ -7,8 +7,9 @@ import (
 )
 
 type MatchConfig struct {
-	GameName       string `yaml:"game_name"`
+	GameType       string `yaml:"game_type"`
 	MatchID        int32  `yaml:"matchid"`
+	Name           string `yaml:"name"`
 	PlayerPerTable int32  `yaml:"player_per_table"`
 	Diamond        int32  `yaml:"diamond"`
 	InitialChips   int64  `yaml:"initial_chips"`

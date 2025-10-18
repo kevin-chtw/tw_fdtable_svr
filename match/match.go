@@ -160,3 +160,7 @@ func (m *Match) netChange(player *Player, online bool) error {
 	t := table.(*Table)
 	return t.netChange(player, online)
 }
+
+func (m *Match) GetPlayerCount() int32 {
+	return 0
+}

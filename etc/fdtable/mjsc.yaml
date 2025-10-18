@@ -1,5 +1,6 @@
-game_name: mjsc
+game_type: mjsc
 matchid: 1002001
+name: 好友房
 player_per_table: 4
 diamond: 8
 initial_chips: 1000
