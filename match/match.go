@@ -3,6 +3,7 @@ package match
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"sync"
 
 	"github.com/kevin-chtw/tw_proto/cproto"
@@ -162,5 +163,13 @@ func (m *Match) netChange(player *Player, online bool) error {
 }
 
 func (m *Match) GetPlayerCount() int32 {
-	return 0
+	count := 0
+	m.tables.Range(func(_, _ any) bool {
+		count++
+		return true
+	})
+	if count <= 0 {
+		return 0
+	}
+	return (int32(count)-1)*m.conf.PlayerPerTable + rand.Int31n(m.conf.PlayerPerTable)
 }
