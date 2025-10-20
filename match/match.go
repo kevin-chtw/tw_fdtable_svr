@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sync"
 
+	"github.com/kevin-chtw/tw_common/utils"
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
@@ -49,7 +50,7 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 		return nil, errors.New("table is full or no table id")
 	}
 
-	player := playerManager.Store(uid, m.conf.MatchID, tableId, m.conf.InitialChips)
+	player := playerManager.Store(ctx, uid, m.conf.MatchID, tableId, m.conf.InitialChips)
 	table := NewTable(m, tableId)
 	if err := table.create(player, req); err != nil {
 		return nil, err
@@ -99,7 +100,7 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 		return nil, errors.New("player is in match")
 	}
 
-	player := playerManager.Store(uid, m.conf.MatchID, req.Tableid, m.conf.InitialChips)
+	player := playerManager.Store(ctx, uid, m.conf.MatchID, req.Tableid, m.conf.InitialChips)
 	t := table.(*Table)
 	if err := t.addPlayer(player); err != nil {
 		return nil, err
@@ -139,17 +140,18 @@ func (m *Match) HandleGameOver(tableid int32, msg proto.Message) error {
 	return err
 }
 
-func (m *Match) NewMatchAck(ack proto.Message) (*cproto.MatchAck, error) {
-	data, err := anypb.New(ack)
+func (m *Match) NewMatchAck(ctx context.Context, msg proto.Message) ([]byte, error) {
+	data, err := anypb.New(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	return &cproto.MatchAck{
+	out := &cproto.MatchAck{
 		Serverid: m.app.GetServerID(),
 		Matchid:  m.conf.MatchID,
 		Ack:      data,
-	}, nil
+	}
+	return utils.Marshal(ctx, out)
 }
 
 func (m *Match) netChange(player *Player, online bool) error {

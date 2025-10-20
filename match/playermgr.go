@@ -1,6 +1,7 @@
 package match
 
 import (
+	"context"
 	"errors"
 	"sync"
 
@@ -32,8 +33,8 @@ func (p *PlayerManager) Load(userID string) (*Player, error) {
 	return player, nil
 }
 
-func (p *PlayerManager) Store(userID string, matchId, tableId int32, score int64) *Player {
-	player := NewPlayer(userID, matchId, tableId, score)
+func (p *PlayerManager) Store(ctx context.Context, userID string, matchId, tableId int32, score int64) *Player {
+	player := NewPlayer(ctx, userID, matchId, tableId, score)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

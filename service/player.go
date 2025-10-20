@@ -34,9 +34,10 @@ func (p *Player) Init() {
 	p.handlers[utils.TypeUrl(&cproto.CancelRoomReq{})] = (*match.Match).HandleCancelRoom
 }
 
-func (p *Player) Message(ctx context.Context, req *cproto.MatchReq) (*cproto.MatchAck, error) {
-	if req == nil {
-		return nil, errors.New("nil request: MatchReq cannot be nil")
+func (p *Player) Message(ctx context.Context, data []byte) ([]byte, error) {
+	req := &cproto.MatchReq{}
+	if err := utils.Unmarshal(ctx, data, req); err != nil {
+		return nil, err
 	}
 
 	logger.Log.Info(req.String(), req.Req.TypeUrl)
@@ -51,14 +52,14 @@ func (p *Player) Message(ctx context.Context, req *cproto.MatchReq) (*cproto.Mat
 	}
 
 	if handler, ok := p.handlers[req.Req.TypeUrl]; ok {
-		rsp, err := handler(match, ctx, msg)
-		if err != nil {
+		if rsp, err := handler(match, ctx, msg); err != nil {
 			return nil, err
+		} else {
+			return match.NewMatchAck(ctx, rsp)
 		}
-		return match.NewMatchAck(rsp)
 	}
 
-	return nil, errors.New("invalid request type")
+	return nil, errors.ErrUnsupported
 }
 
 func (p *Player) Net(ctx context.Context, req *sproto.NetStateReq) (*sproto.NetStateAck, error) {

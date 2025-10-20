@@ -1,11 +1,13 @@
 package match
 
 import (
+	"context"
 	"errors"
 )
 
 // Player 表示游戏中的玩家
 type Player struct {
+	ctx      context.Context
 	ID       string // 玩家唯一ID
 	isOnline bool   // 玩家在线状态
 	matchId  int32
@@ -14,8 +16,9 @@ type Player struct {
 }
 
 // NewPlayer 创建新玩家实例
-func NewPlayer(id string, matchId, tableId int32, score int64) *Player {
+func NewPlayer(ctx context.Context, id string, matchId, tableId int32, score int64) *Player {
 	p := &Player{
+		ctx:      ctx,
 		ID:       id,
 		isOnline: true, // 默认在线状态
 		matchId:  matchId,
