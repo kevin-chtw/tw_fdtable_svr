@@ -57,6 +57,7 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 	}
 
 	m.tables.Store(tableId, table)
+	m.sendStartClient(player)
 	return &cproto.CreateRoomAck{Tableid: tableId, Desn: req.Desn, Properties: req.Properties}, nil
 }
 
@@ -105,6 +106,7 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 	if err := t.addPlayer(player); err != nil {
 		return nil, err
 	}
+	m.sendStartClient(player)
 	return &cproto.JoinRoomAck{Tableid: req.Tableid, Desn: t.desn, Properties: t.fdproperty}, nil
 }
 
@@ -160,6 +162,7 @@ func (m *Match) netChange(player *Player, online bool) error {
 		return errors.New("table not found")
 	}
 
+	m.sendStartClient(player)
 	t := table.(*Table)
 	return t.netChange(player, online)
 }
@@ -174,4 +177,20 @@ func (m *Match) GetPlayerCount() int32 {
 		return 0
 	}
 	return (int32(count)-1)*m.conf.PlayerPerTable + rand.Int31n(m.conf.PlayerPerTable)
+}
+
+func (m *Match) sendStartClient(p *Player) {
+	startClientAck := &cproto.StartClientAck{
+		MatchType: m.app.GetServer().Type,
+		GameType:  m.conf.GameType,
+		ServerId:  m.app.GetServerID(),
+		MatchId:   m.conf.MatchID,
+		TableId:   p.tableId,
+	}
+	data, err := m.NewMatchAck(p.ctx, startClientAck)
+	if err != nil {
+		logger.Log.Errorf("Failed to send start client ack: %v", err)
+		return
+	}
+	m.app.SendPushToUsers(m.app.GetServer().Type, data, []string{p.ID}, "proxy")
 }
