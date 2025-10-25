@@ -2,7 +2,7 @@ game_type: mjhaeb
 matchid: 1001001
 name: 好友房
 player_per_table: 4
-diamond: 8
+sign_condition: '{"diamond": 8}'
 initial_chips: 0
 score_base: 1
 property: 10,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0

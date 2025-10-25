@@ -53,13 +53,13 @@ func (m *MatchManager) reportPlayerCount() {
 	req := &sproto.TourneyUpdateReq{}
 	for matchID, match := range m.matchs {
 		info := &sproto.TourneyInfo{
-			Id:        matchID,
-			Name:      match.conf.Name,
-			GameType:  match.conf.GameType,
-			MatchType: "fdtable",
-			Serverid:  m.app.GetServerID(),
-			Diamond:   match.conf.Diamond,
-			Online:    match.GetPlayerCount(),
+			Id:            matchID,
+			Name:          match.conf.Name,
+			GameType:      match.conf.GameType,
+			MatchType:     "fdtable",
+			Serverid:      m.app.GetServerID(),
+			SignCondition: match.conf.SignCondition,
+			Online:        match.GetPlayerCount(),
 		}
 		req.Infos = append(req.Infos, info)
 	}
