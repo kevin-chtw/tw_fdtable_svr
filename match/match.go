@@ -110,32 +110,32 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 	return &cproto.JoinRoomAck{Tableid: req.Tableid, Desn: t.desn, Properties: t.fdproperty}, nil
 }
 
-func (m *Match) HandleGameResult(tableid int32, msg proto.Message) error {
-	ack := msg.(*sproto.GameResultAck)
+func (m *Match) HandleGameResult(msg proto.Message) error {
+	req := msg.(*sproto.GameResultReq)
 
-	table, ok := m.tables.Load(tableid)
+	table, ok := m.tables.Load(req.Tableid)
 	if !ok {
 		return errors.New("table not found")
 	}
 
 	t := table.(*Table)
-	err := t.gameResult(ack)
+	err := t.gameResult(req)
 	if err != nil {
 		logger.Log.Errorf("Failed to handle game result: %v", err)
 	}
 	return err
 }
 
-func (m *Match) HandleGameOver(tableid int32, msg proto.Message) error {
-	ack := msg.(*sproto.GameOverAck)
+func (m *Match) HandleGameOver(msg proto.Message) error {
+	req := msg.(*sproto.GameOverReq)
 
-	table, ok := m.tables.Load(tableid)
+	table, ok := m.tables.Load(req.Tableid)
 	if !ok {
 		return errors.New("table not found")
 	}
 
 	t := table.(*Table)
-	err := t.gameOver(ack)
+	err := t.gameOver(req)
 	if err != nil {
 		logger.Log.Errorf("Failed to handle game over: %v", err)
 	}
@@ -156,15 +156,24 @@ func (m *Match) NewMatchAck(ctx context.Context, msg proto.Message) ([]byte, err
 	return utils.Marshal(ctx, out)
 }
 
-func (m *Match) netChange(player *Player, online bool) error {
-	table, ok := m.tables.Load(player.tableId)
+func (m *Match) HandleNetState(msg proto.Message) error {
+	req := msg.(*sproto.NetStateReq)
+	p, err := playerManager.Load(req.Uid)
+	if err != nil {
+		return err
+	}
+	if p.isOnline == req.Online {
+		return nil
+	}
+	p.isOnline = req.Online
+	table, ok := m.tables.Load(p.tableId)
 	if !ok {
 		return errors.New("table not found")
 	}
 
-	m.sendStartClient(player)
+	m.sendStartClient(p)
 	t := table.(*Table)
-	return t.netChange(player, online)
+	return t.netChange(p, req.Online)
 }
 
 func (m *Match) GetPlayerCount() int32 {

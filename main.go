@@ -5,8 +5,8 @@ import (
 
 	"github.com/kevin-chtw/tw_common/storage"
 	"github.com/kevin-chtw/tw_common/utils"
-	"github.com/kevin-chtw/tw_match_svr/match"
-	"github.com/kevin-chtw/tw_match_svr/service"
+	"github.com/kevin-chtw/tw_fdtable_svr/match"
+	"github.com/kevin-chtw/tw_fdtable_svr/service"
 	"github.com/sirupsen/logrus"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"github.com/topfreegames/pitaya/v3/pkg/component"
@@ -41,9 +41,7 @@ func main() {
 func initServices() {
 	player := service.NewPlayer(app)
 	app.Register(player, component.WithName("player"), component.WithNameFunc(strings.ToLower))
-	app.RegisterRemote(player, component.WithName("player"), component.WithNameFunc(strings.ToLower))
 
-	game := service.NewGame(app)
-	app.Register(game, component.WithName("game"), component.WithNameFunc(strings.ToLower))
-	app.RegisterRemote(game, component.WithName("game"), component.WithNameFunc(strings.ToLower))
+	remote := service.NewRemote(app)
+	app.RegisterRemote(remote, component.WithName("remote"), component.WithNameFunc(strings.ToLower))
 }

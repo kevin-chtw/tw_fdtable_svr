@@ -96,7 +96,7 @@ func (t *Table) addPlayer(player *Player) error {
 		return err
 	}
 	ms := module.(*storage.ETCDMatching)
-	if err = ms.Put(player.ID); err != nil {
+	if err = ms.Put(player.ID, t.match.conf.MatchID); err != nil {
 		return err
 	}
 	t.Players[player.ID] = player
@@ -126,19 +126,19 @@ func (t *Table) isOnTable(player *Player) bool {
 	return false
 }
 
-func (t *Table) send2Game(msg proto.Message) (rsp *sproto.Match2GameAck, err error) {
+func (t *Table) send2Game(msg proto.Message) (rsp *sproto.GameAck, err error) {
 	data, err := anypb.New(msg)
 	if err != nil {
 		return nil, err
 	}
 
-	req := &sproto.Match2GameReq{
+	req := &sproto.GameReq{
 		Matchid: t.match.conf.MatchID,
 		Tableid: t.ID,
 		Req:     data,
 	}
-	rsp = &sproto.Match2GameAck{}
-	err = t.match.app.RPC(context.Background(), t.match.conf.GameType+".match.message", rsp, req)
+	rsp = &sproto.GameAck{}
+	err = t.match.app.RPC(context.Background(), t.match.conf.GameType+".remote.message", rsp, req)
 	return
 }
 
@@ -170,7 +170,7 @@ func (t *Table) send2User(data []byte, uid string) {
 	}
 }
 
-func (t *Table) gameResult(msg *sproto.GameResultAck) error {
+func (t *Table) gameResult(msg *sproto.GameResultReq) error {
 	for _, p := range msg.Players {
 		if player, ok := t.Players[p.Playerid]; ok {
 			player.score = p.Score
@@ -179,7 +179,7 @@ func (t *Table) gameResult(msg *sproto.GameResultAck) error {
 	return nil
 }
 
-func (t *Table) gameOver(_ *sproto.GameOverAck) error {
+func (t *Table) gameOver(_ *sproto.GameOverReq) error {
 	module, err := t.match.app.GetModule("matchingstorage")
 	if err != nil {
 		return err

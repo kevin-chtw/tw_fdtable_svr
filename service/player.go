@@ -6,9 +6,8 @@ import (
 	"fmt"
 
 	"github.com/kevin-chtw/tw_common/utils"
-	"github.com/kevin-chtw/tw_match_svr/match"
+	"github.com/kevin-chtw/tw_fdtable_svr/match"
 	"github.com/kevin-chtw/tw_proto/cproto"
-	"github.com/kevin-chtw/tw_proto/sproto"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"github.com/topfreegames/pitaya/v3/pkg/component"
 	"github.com/topfreegames/pitaya/v3/pkg/logger"
@@ -60,13 +59,4 @@ func (p *Player) Message(ctx context.Context, data []byte) ([]byte, error) {
 	}
 
 	return nil, errors.ErrUnsupported
-}
-
-func (p *Player) Net(ctx context.Context, req *sproto.NetStateReq) (*sproto.NetStateAck, error) {
-	uid := req.GetUid()
-	player, err := match.GetPlayerManager().Load(uid)
-	if err != nil {
-		return nil, err
-	}
-	return &sproto.NetStateAck{}, player.NetChange(req.GetOnline())
 }

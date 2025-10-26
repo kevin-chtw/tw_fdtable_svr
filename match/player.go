@@ -2,7 +2,6 @@ package match
 
 import (
 	"context"
-	"errors"
 )
 
 // Player 表示游戏中的玩家
@@ -26,16 +25,4 @@ func NewPlayer(ctx context.Context, id string, matchId, tableId int32, score int
 		score:    score,
 	}
 	return p
-}
-
-func (p *Player) NetChange(online bool) error {
-	match := matchManager.Get(p.matchId)
-	if match == nil {
-		return errors.New("match not found for ID")
-	}
-	if p.isOnline == online {
-		return nil
-	}
-	p.isOnline = online
-	return match.netChange(p, online)
 }
