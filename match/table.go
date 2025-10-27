@@ -151,23 +151,10 @@ func (t *Table) netChange(player *Player, online bool) error {
 		Online: online,
 	}
 	if online {
-		rsp := &cproto.JoinRoomAck{Tableid: t.ID, Desn: t.desn, Properties: t.fdproperty}
-		if data, err := t.match.NewMatchAck(player.ctx, rsp); err != nil {
-			return err
-		} else {
-			t.send2User(data, player.ID)
-		}
+		t.match.sendStartClient(player)
 	}
 	_, err := t.send2Game(req)
 	return err
-}
-
-func (t *Table) send2User(data []byte, uid string) {
-	if m, err := t.match.app.SendPushToUsers(t.match.app.GetServer().Type, data, []string{uid}, "proxy"); err != nil {
-		logger.Log.Errorf("send game message to player %v failed: %v", uid, err)
-	} else {
-		logger.Log.Infof("send game message to player %v: %v", uid, m)
-	}
 }
 
 func (t *Table) gameResult(msg *sproto.GameResultReq) error {

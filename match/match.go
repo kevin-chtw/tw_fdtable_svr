@@ -57,8 +57,7 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 	}
 
 	m.tables.Store(tableId, table)
-	m.sendStartClient(player)
-	return &cproto.CreateRoomAck{Tableid: tableId, Desn: req.Desn, Properties: req.Properties}, nil
+	return m.newStartClientAck(player), nil
 }
 
 func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
@@ -106,8 +105,7 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 	if err := t.addPlayer(player); err != nil {
 		return nil, err
 	}
-	m.sendStartClient(player)
-	return &cproto.JoinRoomAck{Tableid: req.Tableid, Desn: t.desn, Properties: t.fdproperty}, nil
+	return m.newStartClientAck(player), nil
 }
 
 func (m *Match) HandleGameResult(msg proto.Message) error {
@@ -171,7 +169,6 @@ func (m *Match) HandleNetState(msg proto.Message) error {
 		return errors.New("table not found")
 	}
 
-	m.sendStartClient(p)
 	t := table.(*Table)
 	return t.netChange(p, req.Online)
 }
@@ -188,14 +185,18 @@ func (m *Match) GetPlayerCount() int32 {
 	return (int32(count)-1)*m.conf.PlayerPerTable + rand.Int31n(m.conf.PlayerPerTable)
 }
 
-func (m *Match) sendStartClient(p *Player) {
-	startClientAck := &cproto.StartClientAck{
+func (m *Match) newStartClientAck(p *Player) *cproto.StartClientAck {
+	return &cproto.StartClientAck{
 		MatchType: m.app.GetServer().Type,
 		GameType:  m.conf.GameType,
 		ServerId:  m.app.GetServerID(),
 		MatchId:   m.conf.MatchID,
 		TableId:   p.tableId,
 	}
+}
+
+func (m *Match) sendStartClient(p *Player) {
+	startClientAck := m.newStartClientAck(p)
 	data, err := m.NewMatchAck(p.ctx, startClientAck)
 	if err != nil {
 		logger.Log.Errorf("Failed to send start client ack: %v", err)
