@@ -64,6 +64,8 @@ func (t *Table) sendCreateTable() error {
 		MatchType:   t.match.app.GetServer().Type,
 		GameCount:   t.gameCount,
 		PlayerCount: t.match.conf.PlayerPerTable,
+		Creator:     t.creator.ID,
+		Desn:        t.desn,
 		Fdproperty:  t.fdproperty,
 	}
 	_, err := t.send2Game(req)
