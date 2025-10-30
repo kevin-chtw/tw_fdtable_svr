@@ -79,6 +79,7 @@ func (t *Table) cancel(p *Player) error {
 	req := &sproto.CancelTableReq{
 		Reason: 1,
 	}
+	t.gameOver()
 	_, err := t.send2Game(req)
 	return err
 }
@@ -168,10 +169,12 @@ func (t *Table) gameResult(msg *sproto.GameResultReq) error {
 	return nil
 }
 
-func (t *Table) gameOver(_ *sproto.GameOverReq) error {
+func (t *Table) gameOver() {
+	t.match.tables.Delete(t.ID)
+	t.match.tableIds.PutBack(t.ID)
 	module, err := t.match.app.GetModule("matchingstorage")
 	if err != nil {
-		return err
+		return
 	}
 	ms := module.(*storage.ETCDMatching)
 	for _, p := range t.Players {
@@ -181,8 +184,4 @@ func (t *Table) gameOver(_ *sproto.GameOverReq) error {
 			continue
 		}
 	}
-
-	t.match.tables.Delete(t.ID)
-	t.match.tableIds.PutBack(t.ID)
-	return nil
 }

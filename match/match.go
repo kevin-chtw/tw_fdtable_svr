@@ -132,12 +132,8 @@ func (m *Match) HandleGameOver(msg proto.Message) error {
 		return errors.New("table not found")
 	}
 
-	t := table.(*Table)
-	err := t.gameOver(req)
-	if err != nil {
-		logger.Log.Errorf("Failed to handle game over: %v", err)
-	}
-	return err
+	table.(*Table).gameOver()
+	return nil
 }
 
 func (m *Match) NewMatchAck(ctx context.Context, msg proto.Message) ([]byte, error) {
