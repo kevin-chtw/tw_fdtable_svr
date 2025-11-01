@@ -84,6 +84,30 @@ func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.
 	return &cproto.CancelRoomAck{Tableid: req.Tableid}, nil
 }
 
+func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.Message, error) {
+	req := msg.(*cproto.CancelRoomReq)
+	uid := m.app.GetSessionFromCtx(ctx).UID()
+	if uid == "" {
+		return nil, errors.New("no logged in")
+	}
+
+	table, ok := m.tables.Load(req.Tableid)
+	if !ok {
+		return nil, errors.New("table not found")
+	}
+
+	player, err := playerManager.Load(uid)
+	if player == nil || err != nil {
+		return nil, errors.New("player not found")
+	}
+
+	t := table.(*Table)
+	if err := t.removePlayer(player); err != nil {
+		return nil, err
+	}
+	return &cproto.ExitMatchAck{}, nil
+}
+
 // 处理房卡加入请求
 func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.JoinRoomReq)

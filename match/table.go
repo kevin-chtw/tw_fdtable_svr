@@ -30,6 +30,7 @@ type Table struct {
 	gameCount  int32   // 游戏局数
 	fdproperty map[string]int32
 	desn       string
+	seats      []int32
 }
 
 func NewTable(match *Match, id int32) *Table {
@@ -41,10 +42,25 @@ func NewTable(match *Match, id int32) *Table {
 		createdAt:  time.Now(),
 		creator:    nil,
 		fdproperty: make(map[string]int32),
+		seats:      make([]int32, 0),
 	}
 }
 
+func (t *Table) getSeat() int32 {
+	s := t.seats[0]
+	t.seats = t.seats[1:]
+	return s
+}
+
+func (t *Table) putSeat(seat int32) {
+	t.seats = append(t.seats, seat)
+}
+
 func (t *Table) create(p *Player, req *cproto.CreateRoomReq) error {
+	for i := range t.match.conf.PlayerPerTable {
+		t.seats = append(t.seats, i)
+	}
+	p.seat = t.getSeat()
 	t.creator = p
 	t.gameCount = req.GameCount
 	t.fdproperty = req.Properties
@@ -79,9 +95,36 @@ func (t *Table) cancel(p *Player) error {
 	req := &sproto.CancelTableReq{
 		Reason: 1,
 	}
-	t.gameOver()
 	_, err := t.send2Game(req)
+	t.gameOver()
 	return err
+}
+
+func (t *Table) removePlayer(p *Player) error {
+	if !t.isOnTable(p) {
+		return errors.New("player not on table")
+	}
+	req := &sproto.ExitTableReq{
+		Playerid: p.ID,
+	}
+	_, err := t.send2Game(req)
+	if err != nil {
+		return err
+	}
+
+	if len(t.Players) == 1 {
+		return t.cancel(p)
+	} else {
+		t.putSeat(p.seat)
+		delete(t.Players, p.ID)
+		playerManager.Delete(p.ID)
+		module, err := t.match.app.GetModule("matchingstorage")
+		if err != nil {
+			return err
+		}
+		ms := module.(*storage.ETCDMatching)
+		return ms.Remove(p.ID)
+	}
 }
 
 // addPlayer 添加玩家到桌子
@@ -102,6 +145,7 @@ func (t *Table) addPlayer(player *Player) error {
 	if err = ms.Put(player.ID, t.match.conf.MatchID); err != nil {
 		return err
 	}
+	player.seat = t.getSeat()
 	t.Players[player.ID] = player
 	if err := t.sendAddPlayer(player.ID, int32(len(t.Players)-1)); err != nil {
 		logger.Log.Errorf("Failed to send AddPlayerReq: %v", err)

@@ -12,6 +12,7 @@ type Player struct {
 	matchId  int32
 	tableId  int32
 	score    int64 // 玩家分数
+	seat     int32
 }
 
 // NewPlayer 创建新玩家实例
@@ -23,6 +24,7 @@ func NewPlayer(ctx context.Context, id string, matchId, tableId int32, score int
 		matchId:  matchId,
 		tableId:  tableId,
 		score:    score,
+		seat:     -1,
 	}
 	return p
 }
