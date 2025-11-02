@@ -41,7 +41,7 @@ func (p *Player) Message(ctx context.Context, data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	logger.Log.Info(req.String(), req.Req.TypeUrl)
+	logger.Log.Info(req.String())
 
 	match := match.GetMatchManager().Get(req.Matchid)
 	if match == nil {

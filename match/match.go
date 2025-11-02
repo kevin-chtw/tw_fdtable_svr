@@ -3,6 +3,7 @@ package match
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"sync"
 
@@ -176,7 +177,7 @@ func (m *Match) HandleGameOver(msg proto.Message) error {
 
 	table, ok := m.tables.Load(req.Tableid)
 	if !ok {
-		return errors.New("table not found")
+		return fmt.Errorf("table:%d not found", req.Tableid)
 	}
 
 	table.(*Table).gameOver()
@@ -184,6 +185,7 @@ func (m *Match) HandleGameOver(msg proto.Message) error {
 }
 
 func (m *Match) NewMatchAck(ctx context.Context, msg proto.Message) ([]byte, error) {
+	logger.Log.Infof("ack %s", utils.JsonMarshal.Format(msg))
 	data, err := anypb.New(msg)
 	if err != nil {
 		return nil, err
