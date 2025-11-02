@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sync"
 
+	"github.com/kevin-chtw/tw_common/matchbase"
 	"github.com/kevin-chtw/tw_common/utils"
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
@@ -18,18 +19,20 @@ import (
 // Table定义已移动到table.go
 
 type Match struct {
-	app      pitaya.Pitaya
-	tables   sync.Map
-	conf     *MatchConfig
-	tableIds *TableIDs
+	app       pitaya.Pitaya
+	tables    sync.Map
+	conf      *MatchConfig
+	Playermgr *matchbase.Playermgr
+	tableIds  *matchbase.TableIDs
 }
 
 func NewMatch(app pitaya.Pitaya, config *MatchConfig) *Match {
 	return &Match{
-		app:      app,
-		tables:   sync.Map{},
-		conf:     config,
-		tableIds: NewTableIDs(),
+		app:       app,
+		tables:    sync.Map{},
+		Playermgr: matchbase.NewPlayermgr(),
+		conf:      config,
+		tableIds:  matchbase.NewTableIDs(),
 	}
 }
 
@@ -41,7 +44,7 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 		return nil, errors.New("no logged in")
 	}
 
-	if player, _ := playerManager.Load(uid); player != nil {
+	if player := m.Playermgr.Load(uid); player != nil {
 		return nil, errors.New("player is in match")
 	}
 
@@ -49,8 +52,8 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 	if err != nil {
 		return nil, errors.New("table is full or no table id")
 	}
-
-	player := playerManager.Store(ctx, uid, m.conf.MatchID, tableId, m.conf.InitialChips)
+	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.MatchID, tableId, m.conf.InitialChips)
+	m.Playermgr.Store(player)
 	table := NewTable(m, tableId)
 	if err := table.create(player, req); err != nil {
 		return nil, err
@@ -72,8 +75,8 @@ func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.
 		return nil, errors.New("table not found")
 	}
 
-	player, err := playerManager.Load(uid)
-	if player == nil || err != nil {
+	player := m.Playermgr.Load(uid)
+	if player == nil {
 		return nil, errors.New("player not found")
 	}
 
@@ -90,12 +93,12 @@ func (m *Match) HandleFDResult(ctx context.Context, msg proto.Message) (proto.Me
 		return nil, errors.New("no logged in")
 	}
 
-	player, err := playerManager.Load(uid)
-	if player == nil || err != nil {
+	player := m.Playermgr.Load(uid)
+	if player == nil {
 		return nil, errors.New("player not found")
 	}
 
-	table, ok := m.tables.Load(player.tableId)
+	table, ok := m.tables.Load(player.TableId)
 	if !ok {
 		return nil, errors.New("table not found")
 	}
@@ -110,12 +113,12 @@ func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.M
 		return nil, errors.New("no logged in")
 	}
 
-	player, err := playerManager.Load(uid)
-	if player == nil || err != nil {
+	player := m.Playermgr.Load(uid)
+	if player == nil {
 		return nil, errors.New("player not found")
 	}
 
-	table, ok := m.tables.Load(player.tableId)
+	table, ok := m.tables.Load(player.TableId)
 	if !ok {
 		return nil, errors.New("table not found")
 	}
@@ -139,11 +142,12 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 	if !ok {
 		return nil, errors.New("table not found")
 	}
-	if player, _ := playerManager.Load(uid); player != nil {
+	if player := m.Playermgr.Load(uid); player != nil {
 		return nil, errors.New("player is in match")
 	}
 
-	player := playerManager.Store(ctx, uid, m.conf.MatchID, req.Tableid, m.conf.InitialChips)
+	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.MatchID, req.Tableid, m.conf.InitialChips)
+	m.Playermgr.Store(player)
 	t := table.(*Table)
 	if err := t.addPlayer(player); err != nil {
 		return nil, err
@@ -195,15 +199,15 @@ func (m *Match) NewMatchAck(ctx context.Context, msg proto.Message) ([]byte, err
 
 func (m *Match) HandleNetState(msg proto.Message) error {
 	req := msg.(*sproto.NetStateReq)
-	p, err := playerManager.Load(req.Uid)
-	if err != nil {
-		return err
+	p := m.Playermgr.Load(req.Uid)
+	if p == nil {
+		return errors.New("player not found")
 	}
-	if p.isOnline == req.Online {
+	if p.Online == req.Online {
 		return nil
 	}
-	p.isOnline = req.Online
-	table, ok := m.tables.Load(p.tableId)
+	p.Online = req.Online
+	table, ok := m.tables.Load(p.TableId)
 	if !ok {
 		return errors.New("table not found")
 	}
@@ -224,19 +228,19 @@ func (m *Match) GetPlayerCount() int32 {
 	return (int32(count)-1)*m.conf.PlayerPerTable + rand.Int31n(m.conf.PlayerPerTable)
 }
 
-func (m *Match) newStartClientAck(p *Player) *cproto.StartClientAck {
+func (m *Match) newStartClientAck(p *matchbase.Player) *cproto.StartClientAck {
 	return &cproto.StartClientAck{
 		MatchType: m.app.GetServer().Type,
 		GameType:  m.conf.GameType,
 		ServerId:  m.app.GetServerID(),
 		MatchId:   m.conf.MatchID,
-		TableId:   p.tableId,
+		TableId:   p.TableId,
 	}
 }
 
-func (m *Match) sendStartClient(p *Player) {
+func (m *Match) sendStartClient(p *matchbase.Player) {
 	startClientAck := m.newStartClientAck(p)
-	data, err := m.NewMatchAck(p.ctx, startClientAck)
+	data, err := m.NewMatchAck(p.Ctx, startClientAck)
 	if err != nil {
 		logger.Log.Errorf("Failed to send start client ack: %v", err)
 		return
@@ -244,8 +248,8 @@ func (m *Match) sendStartClient(p *Player) {
 	m.app.SendPushToUsers(m.app.GetServer().Type, data, []string{p.ID}, "proxy")
 }
 
-func (m *Match) sendMatchResult(p *Player, result *cproto.FDResultAck) {
-	data, err := m.NewMatchAck(p.ctx, result)
+func (m *Match) sendMatchResult(p *matchbase.Player, result *cproto.FDResultAck) {
+	data, err := m.NewMatchAck(p.Ctx, result)
 	if err != nil {
 		logger.Log.Errorf("Failed to send start client ack: %v", err)
 		return
@@ -253,8 +257,8 @@ func (m *Match) sendMatchResult(p *Player, result *cproto.FDResultAck) {
 	m.app.SendPushToUsers(m.app.GetServer().Type, data, []string{p.ID}, "proxy")
 }
 
-func (m *Match) sendRoundResult(p *Player, result *cproto.FDRoundResultAck) {
-	data, err := m.NewMatchAck(p.ctx, result)
+func (m *Match) sendRoundResult(p *matchbase.Player, result *cproto.FDRoundResultAck) {
+	data, err := m.NewMatchAck(p.Ctx, result)
 	if err != nil {
 		logger.Log.Errorf("Failed to send start client ack: %v", err)
 		return

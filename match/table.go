@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/kevin-chtw/tw_common/matchbase"
 	"github.com/kevin-chtw/tw_common/storage"
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
@@ -23,10 +24,10 @@ const (
 type Table struct {
 	match      *Match
 	ID         int32
-	Players    map[string]*Player
+	Players    map[string]*matchbase.Player
 	status     int // 0: waiting, 1: playing, 2: ended
 	createdAt  time.Time
-	creator    *Player // 创建者ID
+	creator    *matchbase.Player // 创建者ID
 	fdproperty map[string]int32
 	seats      []int32
 	result     *cproto.FDResultAck
@@ -36,7 +37,7 @@ func NewTable(match *Match, id int32) *Table {
 	return &Table{
 		match:      match,
 		ID:         id,
-		Players:    make(map[string]*Player),
+		Players:    make(map[string]*matchbase.Player),
 		status:     TableStatusWaiting,
 		createdAt:  time.Now(),
 		creator:    nil,
@@ -59,14 +60,14 @@ func (t *Table) getSeat() int32 {
 
 func (t *Table) isUsed(seat int32) bool {
 	for _, p := range t.Players {
-		if p.seat == seat {
+		if p.Seat == seat {
 			return true
 		}
 	}
 	return false
 }
 
-func (t *Table) create(p *Player, req *cproto.CreateRoomReq) error {
+func (t *Table) create(p *matchbase.Player, req *cproto.CreateRoomReq) error {
 	t.result.GameCount = req.GameCount
 	t.result.OwnerId = p.ID
 	t.result.Desn = req.Desn
@@ -95,7 +96,7 @@ func (t *Table) sendCreateTable() error {
 	return err
 }
 
-func (t *Table) cancel(p *Player) error {
+func (t *Table) cancel(p *matchbase.Player) error {
 	if !t.isOnTable(p) {
 		return errors.New("player not on table")
 	}
@@ -107,7 +108,7 @@ func (t *Table) cancel(p *Player) error {
 	return err
 }
 
-func (t *Table) removePlayer(p *Player) error {
+func (t *Table) removePlayer(p *matchbase.Player) error {
 	if !t.isOnTable(p) {
 		return errors.New("player not on table")
 	}
@@ -123,7 +124,7 @@ func (t *Table) removePlayer(p *Player) error {
 		return t.cancel(p)
 	} else {
 		delete(t.Players, p.ID)
-		playerManager.Delete(p.ID)
+		t.match.Playermgr.Delete(p.ID)
 		module, err := t.match.app.GetModule("matchingstorage")
 		if err != nil {
 			return err
@@ -134,7 +135,7 @@ func (t *Table) removePlayer(p *Player) error {
 }
 
 // addPlayer 添加玩家到桌子
-func (t *Table) addPlayer(player *Player) error {
+func (t *Table) addPlayer(player *matchbase.Player) error {
 	if len(t.Players) >= int(t.match.conf.PlayerPerTable) {
 		return errors.New("table is full")
 	}
@@ -151,7 +152,7 @@ func (t *Table) addPlayer(player *Player) error {
 	if err = ms.Put(player.ID, t.match.conf.MatchID); err != nil {
 		return err
 	}
-	player.seat = t.getSeat()
+	player.Seat = t.getSeat()
 	t.Players[player.ID] = player
 	if err := t.sendAddPlayer(player.ID, int32(len(t.Players)-1)); err != nil {
 		logger.Log.Errorf("Failed to send AddPlayerReq: %v", err)
@@ -170,7 +171,7 @@ func (t *Table) sendAddPlayer(playerId string, seat int32) error {
 	return err
 }
 
-func (t *Table) isOnTable(player *Player) bool {
+func (t *Table) isOnTable(player *matchbase.Player) bool {
 	for _, p := range t.Players {
 		if p.ID == player.ID {
 			return true
@@ -195,7 +196,7 @@ func (t *Table) send2Game(msg proto.Message) (rsp *sproto.GameAck, err error) {
 	return
 }
 
-func (t *Table) netChange(player *Player, online bool) error {
+func (t *Table) netChange(player *matchbase.Player, online bool) error {
 	if !t.isOnTable(player) {
 		return errors.New("player not on table")
 	}
@@ -214,8 +215,8 @@ func (t *Table) gameResult(msg *sproto.GameResultReq) error {
 	t.result.PlayerData = msg.PlayerData
 	t.result.Rounds = append(t.result.Rounds, msg.RoundData)
 	for p, s := range msg.Scores {
-		t.Players[p].score = s
-		t.result.Scores[p] = t.Players[p].score
+		t.Players[p].Score = s
+		t.result.Scores[p] = t.Players[p].Score
 	}
 	t.sendRoundResult(msg.CurGameCount, msg.RoundData)
 	return nil
@@ -231,7 +232,7 @@ func (t *Table) gameOver() {
 	}
 	ms := module.(*storage.ETCDMatching)
 	for _, p := range t.Players {
-		playerManager.Delete(p.ID)
+		t.match.Playermgr.Delete(p.ID)
 		if err = ms.Remove(p.ID); err != nil {
 			logger.Log.Errorf("Failed to remove player from etcd: %v", err)
 			continue
