@@ -84,6 +84,26 @@ func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.
 	return &cproto.CancelRoomAck{Tableid: req.Tableid}, nil
 }
 
+func (m *Match) HandleFDResult(ctx context.Context, msg proto.Message) (proto.Message, error) {
+	uid := m.app.GetSessionFromCtx(ctx).UID()
+	if uid == "" {
+		return nil, errors.New("no logged in")
+	}
+
+	player, err := playerManager.Load(uid)
+	if player == nil || err != nil {
+		return nil, errors.New("player not found")
+	}
+
+	table, ok := m.tables.Load(player.tableId)
+	if !ok {
+		return nil, errors.New("table not found")
+	}
+
+	t := table.(*Table)
+	return t.result, nil
+}
+
 func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	uid := m.app.GetSessionFromCtx(ctx).UID()
 	if uid == "" {

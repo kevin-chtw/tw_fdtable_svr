@@ -31,6 +31,7 @@ func (p *Player) Init() {
 	p.handlers[utils.TypeUrl(&cproto.CreateRoomReq{})] = (*match.Match).HandleCreateRoom
 	p.handlers[utils.TypeUrl(&cproto.JoinRoomReq{})] = (*match.Match).HandleJoinRoom
 	p.handlers[utils.TypeUrl(&cproto.CancelRoomReq{})] = (*match.Match).HandleCancelRoom
+	p.handlers[utils.TypeUrl(&cproto.FDResultReq{})] = (*match.Match).HandleFDResult
 	p.handlers[utils.TypeUrl(&cproto.ExitMatchReq{})] = (*match.Match).HandleExitMatch
 }
 
