@@ -85,20 +85,19 @@ func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.
 }
 
 func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.Message, error) {
-	req := msg.(*cproto.CancelRoomReq)
 	uid := m.app.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
 		return nil, errors.New("no logged in")
 	}
 
-	table, ok := m.tables.Load(req.Tableid)
-	if !ok {
-		return nil, errors.New("table not found")
-	}
-
 	player, err := playerManager.Load(uid)
 	if player == nil || err != nil {
 		return nil, errors.New("player not found")
+	}
+
+	table, ok := m.tables.Load(player.tableId)
+	if !ok {
+		return nil, errors.New("table not found")
 	}
 
 	t := table.(*Table)
@@ -218,6 +217,24 @@ func (m *Match) newStartClientAck(p *Player) *cproto.StartClientAck {
 func (m *Match) sendStartClient(p *Player) {
 	startClientAck := m.newStartClientAck(p)
 	data, err := m.NewMatchAck(p.ctx, startClientAck)
+	if err != nil {
+		logger.Log.Errorf("Failed to send start client ack: %v", err)
+		return
+	}
+	m.app.SendPushToUsers(m.app.GetServer().Type, data, []string{p.ID}, "proxy")
+}
+
+func (m *Match) sendMatchResult(p *Player, result *cproto.FDResultAck) {
+	data, err := m.NewMatchAck(p.ctx, result)
+	if err != nil {
+		logger.Log.Errorf("Failed to send start client ack: %v", err)
+		return
+	}
+	m.app.SendPushToUsers(m.app.GetServer().Type, data, []string{p.ID}, "proxy")
+}
+
+func (m *Match) sendRoundResult(p *Player, result *cproto.FDRoundResultAck) {
+	data, err := m.NewMatchAck(p.ctx, result)
 	if err != nil {
 		logger.Log.Errorf("Failed to send start client ack: %v", err)
 		return

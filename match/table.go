@@ -27,10 +27,9 @@ type Table struct {
 	status     int // 0: waiting, 1: playing, 2: ended
 	createdAt  time.Time
 	creator    *Player // 创建者ID
-	gameCount  int32   // 游戏局数
 	fdproperty map[string]int32
-	desn       string
 	seats      []int32
+	result     *cproto.FDResultAck
 }
 
 func NewTable(match *Match, id int32) *Table {
@@ -43,28 +42,36 @@ func NewTable(match *Match, id int32) *Table {
 		creator:    nil,
 		fdproperty: make(map[string]int32),
 		seats:      make([]int32, 0),
+		result: &cproto.FDResultAck{
+			Tableid: id,
+		},
 	}
 }
 
 func (t *Table) getSeat() int32 {
-	s := t.seats[0]
-	t.seats = t.seats[1:]
-	return s
+	for i := range t.match.conf.PlayerPerTable {
+		if !t.isUsed(int32(i)) {
+			return int32(i)
+		}
+	}
+	return -1
 }
 
-func (t *Table) putSeat(seat int32) {
-	t.seats = append(t.seats, seat)
+func (t *Table) isUsed(seat int32) bool {
+	for _, p := range t.Players {
+		if p.seat == seat {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *Table) create(p *Player, req *cproto.CreateRoomReq) error {
-	for i := range t.match.conf.PlayerPerTable {
-		t.seats = append(t.seats, i)
-	}
-	p.seat = t.getSeat()
+	t.result.GameCount = req.GameCount
+	t.result.OwnerId = p.ID
+	t.result.Desn = req.Desn
 	t.creator = p
-	t.gameCount = req.GameCount
 	t.fdproperty = req.Properties
-	t.desn = req.Desn
 	err := t.sendCreateTable()
 	if err != nil {
 		logrus.Errorf("Failed to send AddTableReq: %v", err)
@@ -78,10 +85,10 @@ func (t *Table) sendCreateTable() error {
 		Property:    t.match.conf.Property,
 		ScoreBase:   t.match.conf.ScoreBase,
 		MatchType:   t.match.app.GetServer().Type,
-		GameCount:   t.gameCount,
+		GameCount:   t.result.GameCount,
 		PlayerCount: t.match.conf.PlayerPerTable,
 		Creator:     t.creator.ID,
-		Desn:        t.desn,
+		Desn:        t.result.Desn,
 		Fdproperty:  t.fdproperty,
 	}
 	_, err := t.send2Game(req)
@@ -115,7 +122,6 @@ func (t *Table) removePlayer(p *Player) error {
 	if len(t.Players) == 1 {
 		return t.cancel(p)
 	} else {
-		t.putSeat(p.seat)
 		delete(t.Players, p.ID)
 		playerManager.Delete(p.ID)
 		module, err := t.match.app.GetModule("matchingstorage")
@@ -205,15 +211,18 @@ func (t *Table) netChange(player *Player, online bool) error {
 }
 
 func (t *Table) gameResult(msg *sproto.GameResultReq) error {
-	for _, p := range msg.Players {
-		if player, ok := t.Players[p.Playerid]; ok {
-			player.score = p.Score
-		}
+	t.result.PlayerData = msg.PlayerData
+	t.result.Rounds = append(t.result.Rounds, msg.RoundData)
+	for p, s := range msg.Scores {
+		t.Players[p].score = s
+		t.result.Scores[p] = t.Players[p].score
 	}
+	t.sendRoundResult(msg.CurGameCount, msg.RoundData)
 	return nil
 }
 
 func (t *Table) gameOver() {
+	t.sendMatchResult()
 	t.match.tables.Delete(t.ID)
 	t.match.tableIds.PutBack(t.ID)
 	module, err := t.match.app.GetModule("matchingstorage")
@@ -227,5 +236,23 @@ func (t *Table) gameOver() {
 			logger.Log.Errorf("Failed to remove player from etcd: %v", err)
 			continue
 		}
+	}
+}
+
+func (t *Table) sendRoundResult(curGameCount int32, roundData string) {
+	roundResult := &cproto.FDRoundResultAck{
+		CurGameCount: curGameCount,
+		Scores:       t.result.Scores,
+		PlayerData:   t.result.PlayerData,
+		RoundData:    roundData,
+	}
+	for _, p := range t.Players {
+		t.match.sendRoundResult(p, roundResult)
+	}
+}
+
+func (t *Table) sendMatchResult() {
+	for _, p := range t.Players {
+		t.match.sendMatchResult(p, t.result)
 	}
 }
