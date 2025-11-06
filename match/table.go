@@ -29,7 +29,6 @@ type Table struct {
 	createdAt  time.Time
 	creator    *matchbase.Player // 创建者ID
 	fdproperty map[string]int32
-	seats      []int32
 	result     *cproto.FDResultAck
 }
 
@@ -42,7 +41,6 @@ func NewTable(match *Match, id int32) *Table {
 		createdAt:  time.Now(),
 		creator:    nil,
 		fdproperty: make(map[string]int32),
-		seats:      make([]int32, 0),
 		result: &cproto.FDResultAck{
 			Tableid: id,
 		},
