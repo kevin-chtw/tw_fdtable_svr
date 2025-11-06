@@ -37,6 +37,15 @@ func NewMatch(app pitaya.Pitaya, config *MatchConfig) *Match {
 	}
 }
 
+func (m *Match) nextTableID() int32 {
+	id, err := m.tableIds.Take()
+	if err != nil {
+		logger.Log.Error(err.Error())
+		return 0
+	}
+	return id
+}
+
 // 处理房卡创建请求
 func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.CreateRoomReq)
@@ -49,18 +58,14 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 		return nil, errors.New("player is in match")
 	}
 
-	tableId, err := m.tableIds.Take()
-	if err != nil {
-		return nil, errors.New("table is full or no table id")
-	}
-	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.MatchID, tableId, m.conf.InitialChips)
+	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.MatchID, m.conf.InitialChips)
 	m.Playermgr.Store(player)
-	table := NewTable(m, tableId)
+	table := NewTable(m)
 	if err := table.create(player, req); err != nil {
 		return nil, err
 	}
 
-	m.tables.Store(tableId, table)
+	m.tables.Store(table.ID, table)
 	return m.newStartClientAck(player), nil
 }
 
@@ -147,7 +152,7 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 		return nil, errors.New("player is in match")
 	}
 
-	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.MatchID, req.Tableid, m.conf.InitialChips)
+	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.MatchID, m.conf.InitialChips)
 	m.Playermgr.Store(player)
 	t := table.(*Table)
 	if err := t.addPlayer(player); err != nil {

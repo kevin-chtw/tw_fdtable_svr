@@ -32,7 +32,8 @@ type Table struct {
 	result     *cproto.FDResultAck
 }
 
-func NewTable(match *Match, id int32) *Table {
+func NewTable(match *Match) *Table {
+	id := match.nextTableID()
 	return &Table{
 		match:      match,
 		ID:         id,
@@ -151,6 +152,7 @@ func (t *Table) addPlayer(player *matchbase.Player) error {
 		return err
 	}
 	player.Seat = t.getSeat()
+	player.TableId = t.ID
 	t.Players[player.ID] = player
 	if err := t.sendAddPlayer(player.ID, int32(len(t.Players)-1)); err != nil {
 		logger.Log.Errorf("Failed to send AddPlayerReq: %v", err)
