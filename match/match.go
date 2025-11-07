@@ -8,48 +8,32 @@ import (
 	"sync"
 
 	"github.com/kevin-chtw/tw_common/matchbase"
-	"github.com/kevin-chtw/tw_common/utils"
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
 	pitaya "github.com/topfreegames/pitaya/v3/pkg"
 	"github.com/topfreegames/pitaya/v3/pkg/logger"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // Table定义已移动到table.go
 
 type Match struct {
-	app       pitaya.Pitaya
+	*matchbase.Match
 	tables    sync.Map
-	conf      *MatchConfig
+	conf      *Config
 	Playermgr *matchbase.Playermgr
-	tableIds  *matchbase.TableIDs
 }
 
-func NewMatch(app pitaya.Pitaya, config *MatchConfig) *Match {
-	return &Match{
-		app:       app,
-		tables:    sync.Map{},
-		Playermgr: matchbase.NewPlayermgr(),
-		conf:      config,
-		tableIds:  matchbase.NewTableIDs(),
-	}
-}
-
-func (m *Match) nextTableID() int32 {
-	id, err := m.tableIds.Take()
-	if err != nil {
-		logger.Log.Error(err.Error())
-		return 0
-	}
-	return id
+func NewMatch(app pitaya.Pitaya, conf *Config) *Match {
+	m := &Match{conf: conf}
+	m.Match = matchbase.NewMatch(app, conf.Config, m)
+	return m
 }
 
 // 处理房卡创建请求
 func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.CreateRoomReq)
-	uid := m.app.GetSessionFromCtx(ctx).UID()
+	uid := m.App.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
 		return nil, errors.New("no logged in")
 	}
@@ -58,7 +42,7 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 		return nil, errors.New("player is in match")
 	}
 
-	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.MatchID, m.conf.InitialChips)
+	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.Matchid, m.conf.InitialChips)
 	m.Playermgr.Store(player)
 	table := NewTable(m)
 	if err := table.create(player, req); err != nil {
@@ -66,12 +50,12 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 	}
 
 	m.tables.Store(table.ID, table)
-	return m.newStartClientAck(player), nil
+	return m.NewStartClientAck(player), nil
 }
 
 func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.CancelRoomReq)
-	uid := m.app.GetSessionFromCtx(ctx).UID()
+	uid := m.App.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
 		return nil, errors.New("no logged in")
 	}
@@ -94,7 +78,7 @@ func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.
 }
 
 func (m *Match) HandleFDResult(ctx context.Context, msg proto.Message) (proto.Message, error) {
-	uid := m.app.GetSessionFromCtx(ctx).UID()
+	uid := m.App.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
 		return nil, errors.New("no logged in")
 	}
@@ -114,7 +98,7 @@ func (m *Match) HandleFDResult(ctx context.Context, msg proto.Message) (proto.Me
 }
 
 func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.Message, error) {
-	uid := m.app.GetSessionFromCtx(ctx).UID()
+	uid := m.App.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
 		return nil, errors.New("no logged in")
 	}
@@ -133,13 +117,18 @@ func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.M
 	if err := t.removePlayer(player); err != nil {
 		return nil, err
 	}
+
+	if len(t.Players) == 0 {
+		m.tables.Delete(t.ID)
+		m.PutBackTableId(t.ID)
+	}
 	return &cproto.ExitMatchAck{}, nil
 }
 
 // 处理房卡加入请求
 func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.JoinRoomReq)
-	uid := m.app.GetSessionFromCtx(ctx).UID()
+	uid := m.App.GetSessionFromCtx(ctx).UID()
 	if uid == "" {
 		return nil, errors.New("no logged in")
 	}
@@ -152,13 +141,13 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 		return nil, errors.New("player is in match")
 	}
 
-	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.MatchID, m.conf.InitialChips)
+	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.Matchid, m.conf.InitialChips)
 	m.Playermgr.Store(player)
 	t := table.(*Table)
-	if err := t.addPlayer(player); err != nil {
+	if err := t.AddPlayer(player); err != nil {
 		return nil, err
 	}
-	return m.newStartClientAck(player), nil
+	return m.NewStartClientAck(player), nil
 }
 
 func (m *Match) HandleGameResult(msg proto.Message) error {
@@ -185,23 +174,11 @@ func (m *Match) HandleGameOver(msg proto.Message) error {
 		return fmt.Errorf("table:%d not found", req.Tableid)
 	}
 
-	table.(*Table).gameOver()
+	t := table.(*Table)
+	t.gameOver()
+	m.tables.Delete(t.ID)
+	m.PutBackTableId(t.ID)
 	return nil
-}
-
-func (m *Match) NewMatchAck(ctx context.Context, msg proto.Message) ([]byte, error) {
-	logger.Log.Infof("ack %s", utils.JsonMarshal.Format(msg))
-	data, err := anypb.New(msg)
-	if err != nil {
-		return nil, err
-	}
-
-	out := &cproto.MatchAck{
-		Serverid: m.app.GetServerID(),
-		Matchid:  m.conf.MatchID,
-		Ack:      data,
-	}
-	return utils.Marshal(ctx, out)
 }
 
 func (m *Match) HandleNetState(msg proto.Message) error {
@@ -220,7 +197,7 @@ func (m *Match) HandleNetState(msg proto.Message) error {
 	}
 
 	t := table.(*Table)
-	return t.netChange(p, req.Online)
+	return t.NetChange(p, req.Online)
 }
 
 func (m *Match) GetPlayerCount() int32 {
@@ -233,42 +210,4 @@ func (m *Match) GetPlayerCount() int32 {
 		return 0
 	}
 	return (int32(count)-1)*m.conf.PlayerPerTable + rand.Int31n(m.conf.PlayerPerTable)
-}
-
-func (m *Match) newStartClientAck(p *matchbase.Player) *cproto.StartClientAck {
-	return &cproto.StartClientAck{
-		MatchType: m.app.GetServer().Type,
-		GameType:  m.conf.GameType,
-		ServerId:  m.app.GetServerID(),
-		MatchId:   m.conf.MatchID,
-		TableId:   p.TableId,
-	}
-}
-
-func (m *Match) sendStartClient(p *matchbase.Player) {
-	startClientAck := m.newStartClientAck(p)
-	data, err := m.NewMatchAck(p.Ctx, startClientAck)
-	if err != nil {
-		logger.Log.Errorf("Failed to send start client ack: %v", err)
-		return
-	}
-	m.app.SendPushToUsers(m.app.GetServer().Type, data, []string{p.ID}, "proxy")
-}
-
-func (m *Match) sendMatchResult(p *matchbase.Player, result *cproto.FDResultAck) {
-	data, err := m.NewMatchAck(p.Ctx, result)
-	if err != nil {
-		logger.Log.Errorf("Failed to send start client ack: %v", err)
-		return
-	}
-	m.app.SendPushToUsers(m.app.GetServer().Type, data, []string{p.ID}, "proxy")
-}
-
-func (m *Match) sendRoundResult(p *matchbase.Player, result *cproto.FDRoundResultAck) {
-	data, err := m.NewMatchAck(p.Ctx, result)
-	if err != nil {
-		logger.Log.Errorf("Failed to send start client ack: %v", err)
-		return
-	}
-	m.app.SendPushToUsers(m.app.GetServer().Type, data, []string{p.ID}, "proxy")
 }

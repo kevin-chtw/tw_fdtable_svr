@@ -1,7 +1,6 @@
 package match
 
 import (
-	"context"
 	"errors"
 	"time"
 
@@ -9,10 +8,7 @@ import (
 	"github.com/kevin-chtw/tw_common/storage"
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
-	"github.com/sirupsen/logrus"
 	"github.com/topfreegames/pitaya/v3/pkg/logger"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 const (
@@ -22,9 +18,7 @@ const (
 )
 
 type Table struct {
-	match      *Match
-	ID         int32
-	Players    map[string]*matchbase.Player
+	*matchbase.Table
 	status     int // 0: waiting, 1: playing, 2: ended
 	createdAt  time.Time
 	creator    *matchbase.Player // 创建者ID
@@ -33,37 +27,15 @@ type Table struct {
 }
 
 func NewTable(match *Match) *Table {
-	id := match.nextTableID()
-	return &Table{
-		match:      match,
-		ID:         id,
-		Players:    make(map[string]*matchbase.Player),
+	t := &Table{
+		Table:      matchbase.NewTable(match.Match),
 		status:     TableStatusWaiting,
 		createdAt:  time.Now(),
 		creator:    nil,
 		fdproperty: make(map[string]int32),
-		result: &cproto.FDResultAck{
-			Tableid: id,
-		},
 	}
-}
-
-func (t *Table) getSeat() int32 {
-	for i := range t.match.conf.PlayerPerTable {
-		if !t.isUsed(int32(i)) {
-			return int32(i)
-		}
-	}
-	return -1
-}
-
-func (t *Table) isUsed(seat int32) bool {
-	for _, p := range t.Players {
-		if p.Seat == seat {
-			return true
-		}
-	}
-	return false
+	t.result = &cproto.FDResultAck{Tableid: t.ID}
+	return t
 }
 
 func (t *Table) create(p *matchbase.Player, req *cproto.CreateRoomReq) error {
@@ -72,50 +44,25 @@ func (t *Table) create(p *matchbase.Player, req *cproto.CreateRoomReq) error {
 	t.result.Desn = req.Desn
 	t.creator = p
 	t.fdproperty = req.Properties
-	err := t.sendCreateTable()
-	if err != nil {
-		logrus.Errorf("Failed to send AddTableReq: %v", err)
-		return err
-	}
-	return t.addPlayer(t.creator)
-}
-
-func (t *Table) sendCreateTable() error {
-	req := &sproto.AddTableReq{
-		Property:    t.match.conf.Property,
-		ScoreBase:   t.match.conf.ScoreBase,
-		MatchType:   t.match.app.GetServer().Type,
-		GameCount:   t.result.GameCount,
-		PlayerCount: t.match.conf.PlayerPerTable,
-		Creator:     t.creator.ID,
-		Desn:        t.result.Desn,
-		Fdproperty:  t.fdproperty,
-	}
-	_, err := t.send2Game(req)
-	return err
+	t.SendAddTableReq(t.result.GameCount, t.fdproperty)
+	return t.AddPlayer(t.creator)
 }
 
 func (t *Table) cancel(p *matchbase.Player) error {
-	if !t.isOnTable(p) {
+	if !t.IsOnTable(p) {
 		return errors.New("player not on table")
 	}
-	req := &sproto.CancelTableReq{
-		Reason: 1,
-	}
-	_, err := t.send2Game(req)
 	t.gameOver()
-	return err
+	t.SendCancelTableReq()
+	return nil
 }
 
 func (t *Table) removePlayer(p *matchbase.Player) error {
-	if !t.isOnTable(p) {
+	if !t.IsOnTable(p) {
 		return errors.New("player not on table")
 	}
-	req := &sproto.ExitTableReq{
-		Playerid: p.ID,
-	}
-	_, err := t.send2Game(req)
-	if err != nil {
+
+	if err := t.SendExitTableReq(p); err != nil {
 		return err
 	}
 
@@ -123,92 +70,14 @@ func (t *Table) removePlayer(p *matchbase.Player) error {
 		return t.cancel(p)
 	} else {
 		delete(t.Players, p.ID)
-		t.match.Playermgr.Delete(p.ID)
-		module, err := t.match.app.GetModule("matchingstorage")
+		t.Match.Playermgr.Delete(p.ID)
+		module, err := t.Match.App.GetModule("matchingstorage")
 		if err != nil {
 			return err
 		}
 		ms := module.(*storage.ETCDMatching)
 		return ms.Remove(p.ID)
 	}
-}
-
-// addPlayer 添加玩家到桌子
-func (t *Table) addPlayer(player *matchbase.Player) error {
-	if len(t.Players) >= int(t.match.conf.PlayerPerTable) {
-		return errors.New("table is full")
-	}
-
-	if t.isOnTable(player) {
-		return errors.New("player already exists on table")
-	}
-
-	module, err := t.match.app.GetModule("matchingstorage")
-	if err != nil {
-		return err
-	}
-	ms := module.(*storage.ETCDMatching)
-	if err = ms.Put(player.ID, t.match.conf.MatchID); err != nil {
-		return err
-	}
-	player.Seat = t.getSeat()
-	player.TableId = t.ID
-	t.Players[player.ID] = player
-	if err := t.sendAddPlayer(player.ID, int32(len(t.Players)-1)); err != nil {
-		logger.Log.Errorf("Failed to send AddPlayerReq: %v", err)
-		return err
-	}
-	return nil
-}
-
-func (t *Table) sendAddPlayer(playerId string, seat int32) error {
-	req := &sproto.AddPlayerReq{
-		Playerid: playerId,
-		Seat:     seat,
-		Score:    int64(t.match.conf.InitialChips),
-	}
-	_, err := t.send2Game(req)
-	return err
-}
-
-func (t *Table) isOnTable(player *matchbase.Player) bool {
-	for _, p := range t.Players {
-		if p.ID == player.ID {
-			return true
-		}
-	}
-	return false
-}
-
-func (t *Table) send2Game(msg proto.Message) (rsp *sproto.GameAck, err error) {
-	data, err := anypb.New(msg)
-	if err != nil {
-		return nil, err
-	}
-
-	req := &sproto.GameReq{
-		Matchid: t.match.conf.MatchID,
-		Tableid: t.ID,
-		Req:     data,
-	}
-	rsp = &sproto.GameAck{}
-	err = t.match.app.RPC(context.Background(), t.match.conf.GameType+".remote.message", rsp, req)
-	return
-}
-
-func (t *Table) netChange(player *matchbase.Player, online bool) error {
-	if !t.isOnTable(player) {
-		return errors.New("player not on table")
-	}
-	req := &sproto.NetStateReq{
-		Uid:    player.ID,
-		Online: online,
-	}
-	if online {
-		t.match.sendStartClient(player)
-	}
-	_, err := t.send2Game(req)
-	return err
 }
 
 func (t *Table) gameResult(msg *sproto.GameResultReq) error {
@@ -224,15 +93,12 @@ func (t *Table) gameResult(msg *sproto.GameResultReq) error {
 
 func (t *Table) gameOver() {
 	t.sendMatchResult()
-	t.match.tables.Delete(t.ID)
-	t.match.tableIds.PutBack(t.ID)
-	module, err := t.match.app.GetModule("matchingstorage")
+	module, err := t.Match.App.GetModule("matchingstorage")
 	if err != nil {
 		return
 	}
 	ms := module.(*storage.ETCDMatching)
 	for _, p := range t.Players {
-		t.match.Playermgr.Delete(p.ID)
 		if err = ms.Remove(p.ID); err != nil {
 			logger.Log.Errorf("Failed to remove player from etcd: %v", err)
 			continue
@@ -248,12 +114,12 @@ func (t *Table) sendRoundResult(curGameCount int32, roundData string) {
 		RoundData:    roundData,
 	}
 	for _, p := range t.Players {
-		t.match.sendRoundResult(p, roundResult)
+		t.Match.PushMsg(p, roundResult)
 	}
 }
 
 func (t *Table) sendMatchResult() {
 	for _, p := range t.Players {
-		t.match.sendMatchResult(p, t.result)
+		t.Match.PushMsg(p, t.result)
 	}
 }
