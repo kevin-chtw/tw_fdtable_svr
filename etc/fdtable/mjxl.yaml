@@ -1,0 +1,8 @@
+game_type: mjxl
+matchid: 1003001
+name: 好友房
+player_per_table: 4
+sign_condition: '{"diamond": 8}'
+initial_chips: 0
+score_base: 1
+property: 10,8,0,1,10,0,1,1,1,1,1,1,1,1,1,1
