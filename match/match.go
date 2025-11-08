@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"sync"
 
 	"github.com/kevin-chtw/tw_common/matchbase"
@@ -14,8 +13,6 @@ import (
 	"github.com/topfreegames/pitaya/v3/pkg/logger"
 	"google.golang.org/protobuf/proto"
 )
-
-// Table定义已移动到table.go
 
 type Match struct {
 	*matchbase.Match
@@ -30,7 +27,6 @@ func NewMatch(app pitaya.Pitaya, conf *Config) *Match {
 	return m
 }
 
-// 处理房卡创建请求
 func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.CreateRoomReq)
 	uid := m.App.GetSessionFromCtx(ctx).UID()
@@ -198,16 +194,4 @@ func (m *Match) HandleNetState(msg proto.Message) error {
 
 	t := table.(*Table)
 	return t.NetChange(p, req.Online)
-}
-
-func (m *Match) GetPlayerCount() int32 {
-	count := 0
-	m.tables.Range(func(_, _ any) bool {
-		count++
-		return true
-	})
-	if count <= 0 {
-		return 0
-	}
-	return (int32(count)-1)*m.conf.PlayerPerTable + rand.Int31n(m.conf.PlayerPerTable)
 }

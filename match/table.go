@@ -2,7 +2,6 @@ package match
 
 import (
 	"errors"
-	"time"
 
 	"github.com/kevin-chtw/tw_common/matchbase"
 	"github.com/kevin-chtw/tw_common/storage"
@@ -11,16 +10,8 @@ import (
 	"github.com/topfreegames/pitaya/v3/pkg/logger"
 )
 
-const (
-	TableStatusWaiting = iota // 0: waiting
-	TableStatusPlaying        // 1: playing
-	TableStatusEnded          // 2: ended
-)
-
 type Table struct {
 	*matchbase.Table
-	status     int // 0: waiting, 1: playing, 2: ended
-	createdAt  time.Time
 	creator    *matchbase.Player // 创建者ID
 	fdproperty map[string]int32
 	result     *cproto.FDResultAck
@@ -29,8 +20,6 @@ type Table struct {
 func NewTable(match *Match) *Table {
 	t := &Table{
 		Table:      matchbase.NewTable(match.Match),
-		status:     TableStatusWaiting,
-		createdAt:  time.Now(),
 		creator:    nil,
 		fdproperty: make(map[string]int32),
 	}
