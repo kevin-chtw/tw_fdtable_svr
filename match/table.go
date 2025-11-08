@@ -2,12 +2,13 @@ package match
 
 import (
 	"errors"
+	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/kevin-chtw/tw_common/matchbase"
-	"github.com/kevin-chtw/tw_common/storage"
 	"github.com/kevin-chtw/tw_proto/cproto"
 	"github.com/kevin-chtw/tw_proto/sproto"
-	"github.com/topfreegames/pitaya/v3/pkg/logger"
 )
 
 type Table struct {
@@ -29,11 +30,23 @@ func NewTable(match *matchbase.Match) *matchbase.Table {
 }
 
 func (t *Table) create(p *matchbase.Player, req *cproto.CreateRoomReq) error {
+	conf := req.GetMatchConfig()
+	count, ok := conf["player_count"]
+	if ok {
+		allowCnt := t.Match.Viper.GetIntSlice("allow_player_count")
+		if !slices.Contains(allowCnt, int(count)) {
+			return fmt.Errorf("allow player count must be in %v", allowCnt)
+		} else {
+			t.PlayerCount = count
+		}
+	}
+
 	t.result.GameCount = req.GameCount
 	t.result.OwnerId = p.ID
 	t.result.Desn = req.Desn
 	t.creator = p
 	t.fdproperty = req.Properties
+
 	t.SendAddTableReq(t.result.GameCount, t.fdproperty)
 	return t.AddPlayer(t.creator)
 }
@@ -56,18 +69,11 @@ func (t *Table) removePlayer(p *matchbase.Player) error {
 		return err
 	}
 
-	if len(t.Players) == 1 {
+	delete(t.Players, p.ID)
+	if len(t.Players) <= 0 {
 		return t.cancel(p)
-	} else {
-		delete(t.Players, p.ID)
-		t.Match.Playermgr.Delete(p.ID)
-		module, err := t.Match.App.GetModule("matchingstorage")
-		if err != nil {
-			return err
-		}
-		ms := module.(*storage.ETCDMatching)
-		return ms.Remove(p.ID)
 	}
+	return nil
 }
 
 func (t *Table) gameResult(msg *sproto.GameResultReq) error {
@@ -76,23 +82,17 @@ func (t *Table) gameResult(msg *sproto.GameResultReq) error {
 	for p, s := range msg.Scores {
 		t.Players[p].Score = s
 		t.result.Scores[p] = t.Players[p].Score
+
 	}
+	maps.Copy(t.result.PlayerData, msg.PlayerData)
 	t.sendRoundResult(msg.CurGameCount, msg.RoundData)
 	return nil
 }
 
 func (t *Table) gameOver() {
 	t.sendMatchResult()
-	module, err := t.Match.App.GetModule("matchingstorage")
-	if err != nil {
-		return
-	}
-	ms := module.(*storage.ETCDMatching)
 	for _, p := range t.Players {
-		if err = ms.Remove(p.ID); err != nil {
-			logger.Log.Errorf("Failed to remove player from etcd: %v", err)
-			continue
-		}
+		t.Match.DelMatchPlayer(p.ID)
 	}
 }
 

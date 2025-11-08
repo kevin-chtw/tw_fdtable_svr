@@ -5,5 +5,5 @@ player_per_table: 4
 sign_condition: '{"diamond": 8}'
 initial_chips: 1000
 score_base: 1
-property: 10,10
-
+property: 10,8,1,10,0,1,1,1,1,1,1,1,1,1,1
+allow_player_count: [3,4]

@@ -43,6 +43,7 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 		return nil, err
 	}
 	m.AddTable(table)
+	m.AddMatchPlayer(player)
 	return m.NewStartClientAck(player), nil
 }
 
@@ -86,6 +87,7 @@ func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.M
 	if len(table.Players) == 0 {
 		m.DelTable(t.ID)
 	}
+	m.DelMatchPlayer(player.ID)
 	return &cproto.ExitMatchAck{}, nil
 }
 
@@ -104,6 +106,7 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 	if err := table.AddPlayer(player); err != nil {
 		return nil, err
 	}
+	m.AddMatchPlayer(player)
 	return m.NewStartClientAck(player), nil
 }
 
@@ -139,7 +142,7 @@ func (m *Match) HandleGameOver(msg proto.Message) error {
 
 func (m *Match) HandleNetState(msg proto.Message) error {
 	req := msg.(*sproto.NetStateReq)
-	p := m.Playermgr.Load(req.Uid)
+	p := m.GetMatchPlayer(req.Uid)
 	if p == nil {
 		return errors.New("player not found")
 	}

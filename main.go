@@ -34,7 +34,7 @@ func main() {
 
 	logger.Log.Infof("Pitaya server of type %s started", serverType)
 	initServices()
-	matchbase.Init(app, match.NewMatch, match.NewTable, match.NewPlayer)
+	matchbase.Init(app, match.NewMatch, match.NewPlayer)
 
 	app.Start()
 }
