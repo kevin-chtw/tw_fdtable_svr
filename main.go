@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/kevin-chtw/tw_common/matchbase"
 	"github.com/kevin-chtw/tw_common/storage"
 	"github.com/kevin-chtw/tw_common/utils"
 	"github.com/kevin-chtw/tw_fdtable_svr/match"
@@ -33,7 +34,7 @@ func main() {
 
 	logger.Log.Infof("Pitaya server of type %s started", serverType)
 	initServices()
-	match.InitGame(app)
+	matchbase.Init(app, match.NewMatch, match.NewTable, match.NewPlayer)
 
 	app.Start()
 }

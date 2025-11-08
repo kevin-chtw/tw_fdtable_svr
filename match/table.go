@@ -17,14 +17,15 @@ type Table struct {
 	result     *cproto.FDResultAck
 }
 
-func NewTable(match *Match) *Table {
+func NewTable(match *matchbase.Match) *matchbase.Table {
 	t := &Table{
-		Table:      matchbase.NewTable(match.Match),
 		creator:    nil,
 		fdproperty: make(map[string]int32),
 	}
+	t.Table = matchbase.NewTable(match, t)
 	t.result = &cproto.FDResultAck{Tableid: t.ID}
-	return t
+
+	return t.Table
 }
 
 func (t *Table) create(p *matchbase.Player, req *cproto.CreateRoomReq) error {

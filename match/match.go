@@ -3,8 +3,6 @@ package match
 import (
 	"context"
 	"errors"
-	"fmt"
-	"sync"
 
 	"github.com/kevin-chtw/tw_common/matchbase"
 	"github.com/kevin-chtw/tw_proto/cproto"
@@ -16,57 +14,49 @@ import (
 
 type Match struct {
 	*matchbase.Match
-	tables    sync.Map
-	conf      *Config
-	Playermgr *matchbase.Playermgr
 }
 
-func NewMatch(app pitaya.Pitaya, conf *Config) *Match {
-	m := &Match{conf: conf}
-	m.Match = matchbase.NewMatch(app, conf.Config, m)
-	return m
+func NewMatch(app pitaya.Pitaya, file string) *matchbase.Match {
+	m := &Match{}
+	m.Match = matchbase.NewMatch(app, file, m)
+	return m.Match
+}
+
+func (m *Match) Tick() {
+
 }
 
 func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.CreateRoomReq)
-	uid := m.App.GetSessionFromCtx(ctx).UID()
-	if uid == "" {
-		return nil, errors.New("no logged in")
-	}
-
-	if player := m.Playermgr.Load(uid); player != nil {
-		return nil, errors.New("player is in match")
-	}
-
-	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.Matchid, m.conf.InitialChips)
-	m.Playermgr.Store(player)
-	table := NewTable(m)
-	if err := table.create(player, req); err != nil {
+	player, err := m.ValidatePlayer(
+		ctx,
+		matchbase.WithCheckPlayerNotInMatch(),
+		matchbase.WithAllowCreateNewPlayer(),
+	)
+	if err != nil {
 		return nil, err
 	}
 
-	m.tables.Store(table.ID, table)
+	table := NewTable(m.Match)
+	t := table.Sub.(*Table)
+	if err := t.create(player, req); err != nil {
+		return nil, err
+	}
+	m.AddTable(table)
 	return m.NewStartClientAck(player), nil
 }
 
 func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.CancelRoomReq)
-	uid := m.App.GetSessionFromCtx(ctx).UID()
-	if uid == "" {
-		return nil, errors.New("no logged in")
+	player, table, err := m.ValidateRequest(
+		ctx,
+		matchbase.WithTableID(req.Tableid),
+		matchbase.RequirePlayerInTable(),
+	)
+	if err != nil {
+		return nil, err
 	}
-
-	table, ok := m.tables.Load(req.Tableid)
-	if !ok {
-		return nil, errors.New("table not found")
-	}
-
-	player := m.Playermgr.Load(uid)
-	if player == nil {
-		return nil, errors.New("player not found")
-	}
-
-	t := table.(*Table)
+	t := table.Sub.(*Table)
 	if err := t.cancel(player); err != nil {
 		return nil, err
 	}
@@ -74,49 +64,27 @@ func (m *Match) HandleCancelRoom(ctx context.Context, msg proto.Message) (proto.
 }
 
 func (m *Match) HandleFDResult(ctx context.Context, msg proto.Message) (proto.Message, error) {
-	uid := m.App.GetSessionFromCtx(ctx).UID()
-	if uid == "" {
-		return nil, errors.New("no logged in")
+	_, table, err := m.ValidateRequest(ctx, matchbase.WithPlayerTable())
+	if err != nil {
+		return nil, err
 	}
-
-	player := m.Playermgr.Load(uid)
-	if player == nil {
-		return nil, errors.New("player not found")
-	}
-
-	table, ok := m.tables.Load(player.TableId)
-	if !ok {
-		return nil, errors.New("table not found")
-	}
-
-	t := table.(*Table)
+	t := table.Sub.(*Table)
 	return t.result, nil
 }
 
 func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.Message, error) {
-	uid := m.App.GetSessionFromCtx(ctx).UID()
-	if uid == "" {
-		return nil, errors.New("no logged in")
+	player, table, err := m.ValidateRequest(ctx, matchbase.WithPlayerTable(), matchbase.RequirePlayerInTable())
+	if err != nil {
+		return nil, err
 	}
 
-	player := m.Playermgr.Load(uid)
-	if player == nil {
-		return nil, errors.New("player not found")
-	}
-
-	table, ok := m.tables.Load(player.TableId)
-	if !ok {
-		return nil, errors.New("table not found")
-	}
-
-	t := table.(*Table)
+	t := table.Sub.(*Table)
 	if err := t.removePlayer(player); err != nil {
 		return nil, err
 	}
 
-	if len(t.Players) == 0 {
-		m.tables.Delete(t.ID)
-		m.PutBackTableId(t.ID)
+	if len(table.Players) == 0 {
+		m.DelTable(t.ID)
 	}
 	return &cproto.ExitMatchAck{}, nil
 }
@@ -124,23 +92,16 @@ func (m *Match) HandleExitMatch(ctx context.Context, msg proto.Message) (proto.M
 // 处理房卡加入请求
 func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Message, error) {
 	req := msg.(*cproto.JoinRoomReq)
-	uid := m.App.GetSessionFromCtx(ctx).UID()
-	if uid == "" {
-		return nil, errors.New("no logged in")
+	player, table, err := m.ValidateRequest(
+		ctx,
+		matchbase.WithTableID(req.Tableid),
+		matchbase.WithCheckPlayerNotInMatch(),
+		matchbase.WithAllowCreateNewPlayer())
+	if err != nil {
+		return nil, err
 	}
 
-	table, ok := m.tables.Load(req.Tableid)
-	if !ok {
-		return nil, errors.New("table not found")
-	}
-	if player := m.Playermgr.Load(uid); player != nil {
-		return nil, errors.New("player is in match")
-	}
-
-	player := matchbase.NewPlayer(nil, ctx, uid, m.conf.Matchid, m.conf.InitialChips)
-	m.Playermgr.Store(player)
-	t := table.(*Table)
-	if err := t.AddPlayer(player); err != nil {
+	if err := table.AddPlayer(player); err != nil {
 		return nil, err
 	}
 	return m.NewStartClientAck(player), nil
@@ -149,12 +110,12 @@ func (m *Match) HandleJoinRoom(ctx context.Context, msg proto.Message) (proto.Me
 func (m *Match) HandleGameResult(msg proto.Message) error {
 	req := msg.(*sproto.GameResultReq)
 
-	table, ok := m.tables.Load(req.Tableid)
-	if !ok {
+	table := m.GetTable(req.Tableid)
+	if table == nil {
 		return errors.New("table not found")
 	}
 
-	t := table.(*Table)
+	t := table.Sub.(*Table)
 	err := t.gameResult(req)
 	if err != nil {
 		logger.Log.Errorf("Failed to handle game result: %v", err)
@@ -165,15 +126,14 @@ func (m *Match) HandleGameResult(msg proto.Message) error {
 func (m *Match) HandleGameOver(msg proto.Message) error {
 	req := msg.(*sproto.GameOverReq)
 
-	table, ok := m.tables.Load(req.Tableid)
-	if !ok {
-		return fmt.Errorf("table:%d not found", req.Tableid)
+	table := m.GetTable(req.Tableid)
+	if table == nil {
+		return errors.New("table not found")
 	}
 
-	t := table.(*Table)
+	t := table.Sub.(*Table)
 	t.gameOver()
-	m.tables.Delete(t.ID)
-	m.PutBackTableId(t.ID)
+	m.DelTable(t.ID)
 	return nil
 }
 
@@ -183,15 +143,15 @@ func (m *Match) HandleNetState(msg proto.Message) error {
 	if p == nil {
 		return errors.New("player not found")
 	}
+	table := m.GetTable(p.TableId)
+	if table == nil {
+		return errors.New("table not found")
+	}
+
 	if p.Online == req.Online {
 		return nil
 	}
 	p.Online = req.Online
-	table, ok := m.tables.Load(p.TableId)
-	if !ok {
-		return errors.New("table not found")
-	}
-
-	t := table.(*Table)
+	t := table.Sub.(*Table)
 	return t.NetChange(p, req.Online)
 }
