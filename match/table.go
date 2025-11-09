@@ -47,7 +47,7 @@ func (t *Table) create(p *matchbase.Player, req *cproto.CreateRoomReq) error {
 	t.creator = p
 	t.fdproperty = req.Properties
 
-	t.SendAddTableReq(t.result.GameCount, t.fdproperty)
+	t.SendAddTableReq(t.result.GameCount, t.creator.ID, t.fdproperty)
 	return t.AddPlayer(t.creator)
 }
 
