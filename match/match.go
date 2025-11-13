@@ -40,6 +40,8 @@ func (m *Match) HandleCreateRoom(ctx context.Context, msg proto.Message) (proto.
 	table := NewTable(m.Match)
 	t := table.Sub.(*Table)
 	if err := t.create(player, req); err != nil {
+		// 创建失败，回收 table ID，避免资源泄漏
+		m.PutBackTableId(table.ID)
 		return nil, err
 	}
 	m.AddTable(table)

@@ -24,7 +24,12 @@ func NewTable(match *matchbase.Match) *matchbase.Table {
 		fdproperty: make(map[string]int32),
 	}
 	t.Table = matchbase.NewTable(match, t)
-	t.result = &cproto.FDResultAck{Tableid: t.ID}
+	t.result = &cproto.FDResultAck{
+		Tableid:    t.ID,
+		Scores:     make(map[string]int64),
+		PlayerData: make(map[string]string),
+		Rounds:     make([]string, 0),
+	}
 
 	return t.Table
 }
@@ -47,7 +52,9 @@ func (t *Table) create(p *matchbase.Player, req *cproto.CreateRoomReq) error {
 	t.creator = p
 	t.fdproperty = req.Properties
 
-	t.SendAddTableReq(t.result.GameCount, t.creator.ID, t.fdproperty)
+	if err := t.SendAddTableReq(t.result.GameCount, t.creator.ID, t.fdproperty); err != nil {
+		return err
+	}
 	return t.AddPlayer(t.creator)
 }
 
@@ -56,7 +63,9 @@ func (t *Table) cancel(p *matchbase.Player) error {
 		return errors.New("player not on table")
 	}
 	t.gameOver()
-	t.SendCancelTableReq()
+	if err := t.SendCancelTableReq(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -82,7 +91,6 @@ func (t *Table) gameResult(msg *sproto.GameResultReq) error {
 	for p, s := range msg.Scores {
 		t.Players[p].Score = s
 		t.result.Scores[p] = t.Players[p].Score
-
 	}
 	maps.Copy(t.result.PlayerData, msg.PlayerData)
 	t.sendRoundResult(msg.CurGameCount, msg.RoundData)
